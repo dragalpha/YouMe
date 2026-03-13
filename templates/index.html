@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>YouMe Downloader</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="bg-orbs">
+    <div class="orb orb1"></div>
+    <div class="orb orb2"></div>
+    <div class="orb orb3"></div>
+  </div>
+
+  <div class="container">
+
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <span class="logo-icon">▶</span>
+        <span class="logo-text">You<span class="accent">Me</span></span>
+      </div>
+      <p class="tagline">YouTube Video & Playlist Downloader</p>
+    </header>
+
+    <!-- URL Input Card -->
+    <div class="card input-card">
+      <div class="input-wrapper">
+        <span class="input-icon">🔗</span>
+        <input
+          type="text"
+          id="urlInput"
+          placeholder="Paste YouTube URL – video or playlist…"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button id="fetchBtn" class="btn btn-primary" onclick="fetchInfo()">
+          <span class="btn-text">Fetch</span>
+          <span class="btn-loader hidden"></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Video Info Card -->
+    <div class="card info-card hidden" id="infoCard">
+      <div class="video-info" id="videoInfo"></div>
+    </div>
+
+    <!-- Options Card -->
+    <div class="card options-card hidden" id="optionsCard">
+      <h3 class="section-title">Download Options</h3>
+      <div class="options-grid">
+
+        <!-- Format Toggle -->
+        <div class="option-group">
+          <label class="option-label">Format</label>
+          <div class="toggle-group">
+            <button class="toggle-btn active" id="videoBtn" onclick="setFormat('video')">
+              🎬 Video (MP4)
+            </button>
+            <button class="toggle-btn" id="audioBtn" onclick="setFormat('audio')">
+              🎵 Audio (MP3)
+            </button>
+          </div>
+        </div>
+
+        <!-- Resolution -->
+        <div class="option-group" id="resGroup">
+          <label class="option-label">Resolution</label>
+          <div class="resolution-grid" id="resGrid">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
+      </div>
+
+      <button class="btn btn-download" id="downloadBtn" onclick="startDownload()">
+        ⬇ Download Now
+      </button>
+    </div>
+
+    <!-- Active Downloads -->
+    <div class="card downloads-card hidden" id="activeCard">
+      <h3 class="section-title">Active Downloads</h3>
+      <div id="activeDownloads"></div>
+    </div>
+
+    <!-- Files Library -->
+    <div class="card library-card" id="libraryCard">
+      <div class="library-header">
+        <h3 class="section-title">Downloaded Files</h3>
+        <button class="btn btn-sm" onclick="loadFiles()">↺ Refresh</button>
+      </div>
+      <div id="fileList"><p class="empty-msg">No files yet.</p></div>
+    </div>
+
+  </div>
+
+  <script src="/static/script.js"></script>
+</body>
+</html>

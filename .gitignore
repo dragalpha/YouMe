@@ -1,0 +1,30 @@
+# Python cache and virtual environments
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+
+# Flask and local runtime data
+instance/
+*.log
+
+# Local downloaded media and temp output
+downloads/
+
+# Build artifacts
+build/
+dist/
+*.spec
+
+# Optional local binaries (do not commit)
+ffmpeg.exe
+yt-dlp.exe
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
