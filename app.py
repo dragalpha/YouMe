@@ -156,6 +156,47 @@ def call_yt_worker(path, payload):
         }, 502
 
 
+def check_yt_worker_health():
+    if not yt_worker_enabled():
+        return {
+            "enabled": False,
+            "status": "not_configured",
+            "worker_url": "",
+            "secret_configured": bool(YTDLP_WORKER_SECRET),
+        }, 200
+
+    try:
+        response = requests.get(
+            f"{YTDLP_WORKER_URL}/healthz",
+            timeout=min(YTDLP_WORKER_TIMEOUT, 10.0),
+        )
+        body = response.json() if response.content else {}
+        return {
+            "enabled": True,
+            "status": "ok" if response.ok else "unhealthy",
+            "worker_url": YTDLP_WORKER_URL,
+            "secret_configured": bool(YTDLP_WORKER_SECRET),
+            "worker_http_status": response.status_code,
+            "worker_response": body,
+        }, 200 if response.ok else 502
+    except requests.RequestException as e:
+        return {
+            "enabled": True,
+            "status": "unreachable",
+            "worker_url": YTDLP_WORKER_URL,
+            "secret_configured": bool(YTDLP_WORKER_SECRET),
+            "error": str(e),
+        }, 502
+    except ValueError:
+        return {
+            "enabled": True,
+            "status": "invalid_response",
+            "worker_url": YTDLP_WORKER_URL,
+            "secret_configured": bool(YTDLP_WORKER_SECRET),
+            "error": "Worker health endpoint did not return JSON",
+        }, 502
+
+
 def register_worker_result_task(worker_result):
     task_id = str(uuid.uuid4())
     stream_url = (worker_result or {}).get("stream_url", "")
@@ -322,6 +363,13 @@ def habit_consistency(habit_id, window_days):
 @app.route("/healthz")
 def healthz():
     return jsonify({"ok": True})
+
+
+@app.route("/api/worker_status", methods=["GET"])
+@api_auth_required
+def api_worker_status():
+    body, status = check_yt_worker_health()
+    return jsonify(body), status
 
 
 @app.route("/login")
