@@ -10,6 +10,13 @@ env/
 # Flask and local runtime data
 instance/
 *.log
+*.db
+*.sqlite
+*.sqlite3
+
+# Local environment config
+.env
+.env.*
 
 # Local downloaded media and temp output
 downloads/
@@ -18,6 +25,12 @@ downloads/
 build/
 dist/
 *.spec
+
+# Python tooling caches
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 
 # Optional local binaries (do not commit)
 ffmpeg.exe

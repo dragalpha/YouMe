@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="batman">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>YouMe</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Nunito:wght@400;600;700;800&family=Barlow+Condensed:wght@400;600;700&family=Orbitron:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" />
+</head>
+<body>
+
+  <!-- ─── Background Layer ─────────────────────────────── -->
+  <div class="bg-layer" aria-hidden="true">
+    <div class="bg-orb orb1"></div>
+    <div class="bg-orb orb2"></div>
+    <div class="bg-orb orb3"></div>
+  </div>
+
+  <!-- ─── App Shell ────────────────────────────────────── -->
+  <div class="app-shell">
+
+    <!-- ── Sidebar ──────────────────────────────────────── -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-icon-wrap">▶</div>
+        <span class="brand-name">You<span class="brand-accent">Me</span></span>
+      </div>
+
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-section="focus" onclick="showSection('focus')">
+          <span class="nav-icon">🎯</span>
+          <span class="nav-label">Focus Mode</span>
+        </button>
+        <button class="nav-item" data-section="downloader" onclick="showSection('downloader')">
+          <span class="nav-icon">⬇</span>
+          <span class="nav-label">Downloader</span>
+        </button>
+        <button class="nav-item" data-section="library" onclick="showSection('library')">
+          <span class="nav-icon">📚</span>
+          <span class="nav-label">Library</span>
+        </button>
+        <button class="nav-item" data-section="watchlist" onclick="showSection('watchlist')">
+          <span class="nav-icon">👁️</span>
+          <span class="nav-label">Watchlist</span>
+        </button>
+        <button class="nav-item" data-section="planner" onclick="showSection('planner')">
+          <span class="nav-icon">📝</span>
+          <span class="nav-label">Planner</span>
+        </button>
+        <button class="nav-item" data-section="settings" onclick="showSection('settings')">
+          <span class="nav-icon">⚙</span>
+          <span class="nav-label">Settings</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <span class="version-tag">YouMe v2.0</span>
+      </div>
+    </aside>
+
+    <!-- ── Mobile Top Bar ────────────────────────────────── -->
+    <header class="mobile-topbar">
+      <span class="mobile-brand">You<span class="brand-accent">Me</span></span>
+      <nav class="mobile-nav">
+        <button class="mob-tab active" data-section="focus" onclick="showSection('focus')">
+          <span>🎯</span><span>Focus</span>
+        </button>
+        <button class="mob-tab" data-section="downloader" onclick="showSection('downloader')">
+          <span>⬇</span><span>Get</span>
+        </button>
+        <button class="mob-tab" data-section="library" onclick="showSection('library')">
+          <span>📚</span><span>Library</span>
+        </button>
+        <button class="mob-tab" data-section="watchlist" onclick="showSection('watchlist')">
+          <span>👁️</span><span>List</span>
+        </button>
+        <button class="mob-tab" data-section="planner" onclick="showSection('planner')">
+          <span>📝</span><span>Plan</span>
+        </button>
+        <button class="mob-tab" data-section="settings" onclick="showSection('settings')">
+          <span>⚙</span><span>Settings</span>
+        </button>
+      </nav>
+    </header>
+
+    <!-- ── Main Content ──────────────────────────────────── -->
+    <main class="main-content">
+
+      <!-- ═══════════ FOCUS SECTION ═══════════ -->
+      <section id="sec-focus" class="app-section active">
+        <div class="sec-header anim-stagger-1">
+          <div>
+            <h1 class="sec-title">Focus Mode</h1>
+            <p class="sec-sub">Pomodoro timer · ambient audio · quick notes</p>
+          </div>
+        </div>
+
+        <div class="focus-layout">
+
+          <!-- Pomodoro Timer Card -->
+          <div class="card timer-card anim-stagger-2">
+            <div class="timer-top">
+              <select id="pomodoroMode" class="dash-select compact" onchange="setPomodoroMode(this.value)">
+                <option value="25-5">25 / 5 · Classic</option>
+                <option value="50-10">50 / 10 · Deep Work</option>
+              </select>
+              <span class="phase-badge" id="focusPhase">Focus</span>
+            </div>
+
+            <div class="timer-ring-wrap">
+              <svg class="timer-ring-svg" viewBox="0 0 200 200" aria-hidden="true">
+                <circle class="ring-track" cx="100" cy="100" r="84"/>
+                <circle class="ring-fill" id="timerRing" cx="100" cy="100" r="84"/>
+              </svg>
+              <div class="timer-center">
+                <span class="timer-digits" id="focusTimer">25:00</span>
+                <span class="timer-cycle" id="focusCycle">Work</span>
+              </div>
+            </div>
+
+            <p class="timer-status-text" id="focusStatus">Ready for a 25 / 5 Pomodoro.</p>
+
+            <div class="timer-btn-row">
+              <button class="btn btn-primary btn-lg" id="focusStartBtn" onclick="toggleFocusTimer()">Start</button>
+              <button class="btn btn-ghost" id="focusResetBtn" onclick="resetFocusTimer()">Reset</button>
+            </div>
+
+            <div class="session-row">
+              <div class="stat-pill">
+                <span class="stat-num" id="focusSessions">0</span>
+                <span class="stat-lbl">sessions today</span>
+              </div>
+              <div class="stat-pill" style="margin-left:8px">
+                <span class="stat-num" id="focusCycleLabel">Work</span>
+                <span class="stat-lbl">cycle</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Ambient Player Card -->
+          <div class="card audio-card anim-stagger-3">
+            <div class="card-head">
+              <h3 class="card-title">Ambient Player</h3>
+              <button class="btn btn-icon-round" id="soundToggleBtn" onclick="toggleFocusAudioManual()">▶</button>
+            </div>
+
+            <select id="focusAudioSelect" class="dash-select" onchange="updateLofiButtons()">
+              <optgroup label="Ambient Sounds">
+                <option value="ambient:lofi">🎵 Lofi Beats</option>
+                <option value="ambient:rain">🌧 Rain</option>
+                <option value="ambient:cafe">☕ Cafe</option>
+                <option value="ambient:pink">🌸 Pink Noise</option>
+                <option value="ambient:white">💨 White Noise</option>
+                <option value="ambient:binaural">🧠 Binaural Beats</option>
+              </optgroup>
+              <optgroup id="myCustomLofiGroup" label="My Custom Lofi"></optgroup>
+              <optgroup id="searchedTracksGroup" label="Searched Tracks"></optgroup>
+            </select>
+
+            <div class="search-row">
+              <input type="text" id="focusMusicQuery" class="dash-input" placeholder="Search YouTube music…"/>
+              <button class="btn btn-accent-sm" id="focusMusicSearchBtn" onclick="searchFocusMusic()">Search</button>
+            </div>
+
+            <div class="audio-controls-row" style="flex-wrap: wrap; gap: 8px;">
+              <span class="vol-icon">🔊</span>
+              <input type="range" id="soundVolume" min="0" max="100" value="35" class="dash-range" style="width:70px"/>
+              <div style="display:flex; gap: 4px; margin-left: auto;">
+                <button class="btn btn-ghost-sm" id="btnSaveLofi" onclick="saveFocusTrack()" style="display:none;">★ Save</button>
+                <button class="btn btn-ghost-sm" id="btnRemoveLofi" onclick="removeFocusTrack()" style="display:none; color:var(--red);">✖ Remove</button>
+                <button class="btn btn-ghost-sm" id="focusMusicDownloadBtn" onclick="downloadSelectedFocusTrack()">↓ MP3</button>
+              </div>
+            </div>
+
+            <label class="check-label">
+              <input type="checkbox" id="autoSound" checked/>
+              <span>Auto-play during sessions</span>
+            </label>
+
+            <audio id="focusTrackAudio" preload="none"></audio>
+          </div>
+
+          <!-- Focus Notes Card -->
+          <div class="card notes-card anim-stagger-4">
+            <div class="card-head">
+              <h3 class="card-title">Focus Notes</h3>
+              <button class="btn btn-ghost-sm" id="focusNotepadClearBtn" type="button">Clear</button>
+            </div>
+            <textarea id="focusNotepad" class="notes-area" placeholder="Jot tasks, ideas, or reminders for this session…"></textarea>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ═══════════ DOWNLOADER SECTION ═══════════ -->
+      <section id="sec-downloader" class="app-section">
+        <div class="sec-header anim-stagger-1">
+          <div>
+            <h1 class="sec-title">Downloader</h1>
+            <p class="sec-sub">YouTube videos &amp; playlists as MP4 or MP3</p>
+          </div>
+        </div>
+
+        <!-- URL Input -->
+        <div class="card url-card anim-stagger-2">
+          <div class="url-row">
+            <span class="url-icon-glyph">🔗</span>
+            <input type="text" id="urlInput" class="dash-input url-input"
+              placeholder="Paste YouTube URL — video or playlist…"
+              autocomplete="off" spellcheck="false"/>
+            <button class="btn btn-primary" id="fetchBtn" onclick="fetchInfo()">
+              <span class="btn-text">Fetch</span>
+              <span class="btn-loader hidden"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Video Info Card -->
+        <div class="card hidden anim-stagger-3" id="infoCard">
+          <div class="video-info" id="videoInfo"></div>
+        </div>
+
+        <!-- Options Card -->
+        <div class="card hidden anim-stagger-4" id="optionsCard">
+          <h3 class="card-title" style="margin-bottom:16px">Download Options</h3>
+          <div class="dl-options">
+            <div class="option-group">
+              <label class="opt-label">Format</label>
+              <div class="format-toggle">
+                <button class="fmt-btn active" id="videoBtn" onclick="setFormat('video')">🎬 Video (MP4)</button>
+                <button class="fmt-btn" id="audioBtn" onclick="setFormat('audio')">🎵 Audio (MP3)</button>
+              </div>
+            </div>
+            <div class="option-group" id="resGroup">
+              <label class="opt-label">Resolution</label>
+              <div class="res-grid" id="resGrid"></div>
+            </div>
+          </div>
+          <button class="btn btn-download" id="downloadBtn" onclick="startDownload()">⬇ Download Now</button>
+        </div>
+
+        <!-- Active Downloads -->
+        <div class="card hidden anim-stagger-5" id="activeCard">
+          <h3 class="card-title" style="margin-bottom:14px">Active Downloads</h3>
+          <div id="activeDownloads"></div>
+        </div>
+
+      </section>
+
+      <!-- ═══════════ LIBRARY SECTION ═══════════ -->
+      <section id="sec-library" class="app-section">
+        <div class="sec-header anim-stagger-1">
+          <div>
+            <h1 class="sec-title">Library</h1>
+            <p class="sec-sub">Your downloaded files</p>
+          </div>
+          <button class="btn btn-ghost-sm" onclick="loadFiles()">↺ Refresh</button>
+        </div>
+
+        <div class="lib-grid anim-stagger-2" id="fileList">
+          <p class="empty-msg">No files yet. Download something!</p>
+        </div>
+      </section>
+
+      <!-- ═══════════ WATCHLIST SECTION ═══════════ -->
+      <section id="sec-watchlist" class="app-section">
+        <div class="sec-header anim-stagger-1">
+          <div>
+            <h1 class="sec-title">Watchlist</h1>
+            <p class="sec-sub">Track videos & learned insights</p>
+          </div>
+        </div>
+
+        <div class="card url-card anim-stagger-2">
+          <div class="url-row">
+            <span class="url-icon-glyph">🔗</span>
+            <input type="text" id="watchlistInput" class="dash-input url-input"
+              placeholder="Paste YouTube URL to track…"
+              autocomplete="off" spellcheck="false"/>
+            <button class="btn btn-primary" onclick="addWatchlistItem()">
+              <span class="btn-text">Add</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="lib-grid anim-stagger-3" id="watchlistGrid">
+          <p class="empty-msg">No watchlist items yet.</p>
+        </div>
+      </section>
+
+      <!-- ═══════════ PLANNER SECTION ═══════════ -->
+      <section id="sec-planner" class="app-section">
+        <div class="sec-header anim-stagger-1">
+          <div>
+            <h1 class="sec-title">Daily Planner</h1>
+            <p class="sec-sub">Track your productivity & activities</p>
+          </div>
+        </div>
+
+        <div class="planner-layout" style="display:grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+          
+          <!-- Add Task Form -->
+          <div class="card anim-stagger-2">
+            <h3 class="card-title" style="margin-bottom:14px">Add Activity</h3>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <input type="text" id="planActivity" class="dash-input" placeholder="Activity Name"/>
+              <div style="display:flex; gap:10px;">
+                <input type="text" id="planTime" class="dash-input" placeholder="Time (e.g., 10:00 AM)"/>
+                <input type="text" id="planPlace" class="dash-input" placeholder="Place"/>
+              </div>
+              <input type="text" id="planAfter" class="dash-input" placeholder="After which activity? (Prerequisite)"/>
+              
+              <select id="planCategory" class="dash-select">
+                <option value="Studying">Studying</option>
+                <option value="Experimenting">Experimenting</option>
+                <option value="Exploring">Exploring</option>
+                <option value="Time Pass">Time Pass</option>
+              </select>
+
+              <button class="btn btn-primary" onclick="addPlannerTask()" style="margin-top:8px">Track Activity</button>
+            </div>
+          </div>
+
+          <!-- Graph Card -->
+          <div class="card anim-stagger-3">
+            <h3 class="card-title" style="margin-bottom:14px">Productivity Focus</h3>
+            <div id="plannerGraph" style="height:200px; display:flex; align-items:flex-end; gap:8px; border-bottom:1px solid var(--border); padding-bottom:8px;">
+               <!-- Bars will be injected dynamically -->
+            </div>
+            <p class="card-sub" style="margin-top: 10px; text-align:center;" id="plannerScore">Score: 0</p>
+          </div>
+        </div>
+
+        <div class="card anim-stagger-4" style="margin-top:20px;">
+          <h3 class="card-title" style="margin-bottom:14px">Today's Schedule</h3>
+          <div id="plannerList" style="display:flex; flex-direction:column; gap:10px;">
+            <p class="empty-msg">No activities planned.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════ SETTINGS SECTION ═══════════ -->
+      <section id="sec-settings" class="app-section">
+        <div class="sec-header anim-stagger-1">
+          <div>
+            <h1 class="sec-title">Settings</h1>
+            <p class="sec-sub">Personalize your workspace</p>
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:20px;">
+
+          <div class="card settings-card">
+            <h3 class="card-title">Visual Theme</h3>
+            <p class="card-sub">Themes only change colors and fonts — all features stay the same.</p>
+            <div class="theme-picker">
+
+              <button class="theme-opt active" data-t="batman" onclick="setTheme('batman')">
+                <div class="theme-swatch batman-swatch">
+                  <span></span><span class="ac"></span>
+                </div>
+                <strong>Batman</strong>
+                <small>Dark &amp; minimal</small>
+              </button>
+
+              <button class="theme-opt" data-t="hello-kitty" onclick="setTheme('hello-kitty')">
+                <div class="theme-swatch kitty-swatch">
+                  <span></span><span class="ac"></span>
+                </div>
+                <strong>Hello Kitty</strong>
+                <small>Soft pastel pink</small>
+              </button>
+
+              <button class="theme-opt" data-t="spiderman" onclick="setTheme('spiderman')">
+                <div class="theme-swatch spidey-swatch">
+                  <span></span><span class="ac"></span>
+                </div>
+                <strong>Spiderman</strong>
+                <small>Red &amp; blue energy</small>
+              </button>
+
+              <button class="theme-opt" data-t="ironman" onclick="setTheme('ironman')">
+                <div class="theme-swatch ironman-swatch">
+                  <span></span><span class="ac"></span>
+                </div>
+                <strong>Iron Man</strong>
+                <small>Tech red &amp; gold</small>
+              </button>
+
+            </div>
+          </div>
+
+          <div class="card settings-card">
+            <h3 class="card-title">🖼️ Custom Wallpaper</h3>
+            <p class="card-sub">Upload your own image as the background. A crop tool will let you adjust framing before applying.</p>
+            <div style="display:flex; gap: 12px; align-items: center; margin-top: 16px; flex-wrap:wrap;">
+              <label for="customBgInput" class="btn btn-primary" style="cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
+                📁 Choose Image
+              </label>
+              <input type="file" id="customBgInput" accept="image/*" style="display:none;"/>
+              <button class="btn btn-ghost" id="clearBgBtn" onclick="clearCustomBackground()">✕ Clear Wallpaper</button>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+
+    </main><!-- .main-content -->
+  </div><!-- .app-shell -->
+
+  <!-- ─── Crop Modal ────────────────────────────────────── -->
+  <div id="cropModal" class="modal-overlay" style="display: none;">
+    <div class="modal-content card" style="width: 90%; max-width: 800px; display: flex; flex-direction: column;">
+      <h3 class="card-title">Adjust Wallpaper Crop</h3>
+      <div class="crop-container" style="max-height: 60vh; width: 100%; margin: 20px 0;">
+        <img id="cropImage" style="max-width: 100%; display: block;" src="" alt="Crop Preview">
+      </div>
+      <div style="display: flex; gap: 10px; justify-content: flex-end;">
+        <button class="btn btn-ghost" onclick="closeCropModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveCroppedImage()">Set Wallpaper</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+  <script src="/static/script.js"></script>
+</body>
+</html>

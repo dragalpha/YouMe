@@ -4,7 +4,15 @@ import threading
 import uuid
 import sys
 import webbrowser
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from urllib.parse import urlparse
+from datetime import datetime, timezone
+from functools import wraps
+from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, UserMixin, current_user, login_user, logout_user
+from authlib.integrations.flask_client import OAuth
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 import yt_dlp
 
 
@@ -30,6 +38,77 @@ app = Flask(
     template_folder=os.path.join(RESOURCE_DIR, "templates"),
     static_folder=os.path.join(RESOURCE_DIR, "static"),
 )
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024  # 1 MB request body cap
+
+database_url = os.getenv("DATABASE_URL", f"sqlite:///{os.path.join(RUNTIME_DIR, 'youme.db')}")
+if database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+app.config.update(
+    SECRET_KEY=os.getenv("SECRET_KEY", "dev-insecure-change-me"),
+    SQLALCHEMY_DATABASE_URI=database_url,
+    SQLALCHEMY_TRACK_MODIFICATIONS=False,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE", "0") == "1",
+)
+
+AUTH_REQUIRED = os.getenv("AUTH_REQUIRED", "0") == "1"
+INVITE_ONLY = os.getenv("INVITE_ONLY", "1") == "1"
+
+db = SQLAlchemy(app)
+login_manager = LoginManager(app)
+oauth = OAuth(app)
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    storage_uri=os.getenv("RATELIMIT_STORAGE_URI", "memory://"),
+    default_limits=[],
+)
+
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+
+google_oauth = None
+if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
+    google_oauth = oauth.register(
+        name="google",
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+        server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+        client_kwargs={"scope": "openid email profile"},
+    )
+
+print(f"TEMPLATES: {app.template_folder}")
+print(f"STATIC: {app.static_folder}")
+
+
+@app.after_request
+def add_no_cache_headers(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    # Basic hardening headers
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
+        "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com data:; "
+        "img-src 'self' data: https: blob:; "
+        "media-src 'self' data: https: blob:; "
+        "connect-src 'self' https:; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'"
+    )
+    return response
+
+
 
 DOWNLOAD_FOLDER = os.path.join(RUNTIME_DIR, "downloads")
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
@@ -42,6 +121,185 @@ FFMPEG_LOCATION = os.path.dirname(FFMPEG_BINARY) if os.path.isfile(FFMPEG_BINARY
 
 # Track download progress per task ID
 download_tasks = {}
+download_tasks_lock = threading.Lock()
+
+
+class User(db.Model, UserMixin):
+    id = db.Column(db.Integer, primary_key=True)
+    google_sub = db.Column(db.String(128), unique=True, nullable=False)
+    email = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    display_name = db.Column(db.String(255), nullable=True)
+    avatar_url = db.Column(db.String(512), nullable=True)
+    subscription_tier = db.Column(db.String(32), nullable=False, default="free")
+    is_active_user = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class Invite(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+class PomodoroStreak(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    current_streak = db.Column(db.Integer, nullable=False, default=0)
+    best_streak = db.Column(db.Integer, nullable=False, default=0)
+    updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class Habit(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    is_completed = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+with app.app_context():
+    db.create_all()
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    try:
+        return db.session.get(User, int(user_id))
+    except Exception:
+        return None
+
+
+def api_auth_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if AUTH_REQUIRED and not current_user.is_authenticated:
+            return jsonify({"error": "Authentication required"}), 401
+        return f(*args, **kwargs)
+    return wrapper
+
+
+def paid_tier_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if AUTH_REQUIRED and not current_user.is_authenticated:
+            return jsonify({"error": "Authentication required"}), 401
+        if current_user.is_authenticated:
+            tier = (current_user.subscription_tier or "free").lower()
+            if tier not in {"pro", "paid", "premium"}:
+                return jsonify({"error": "Paid subscription required"}), 403
+        return f(*args, **kwargs)
+    return wrapper
+
+
+def is_invited(email):
+    if not INVITE_ONLY:
+        return True
+    invite = Invite.query.filter_by(email=email.lower(), is_active=True).first()
+    return invite is not None
+
+
+@app.route("/healthz")
+def healthz():
+    return jsonify({"ok": True})
+
+
+@app.route("/login")
+def login():
+    if not AUTH_REQUIRED:
+        return redirect(url_for("index"))
+    if current_user.is_authenticated:
+        return redirect(url_for("index"))
+    if google_oauth is None:
+        return (
+            "Google OAuth is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.",
+            503,
+        )
+    return (
+        '<html><body style="font-family:Arial;padding:24px">'
+        '<h2>YouMe Login</h2>'
+        '<p>Please sign in with Google to continue.</p>'
+        '<a href="/auth/google">Continue with Google</a>'
+        '</body></html>'
+    )
+
+
+@app.route("/logout")
+def logout():
+    logout_user()
+    return redirect(url_for("login" if AUTH_REQUIRED else "index"))
+
+
+@app.route("/auth/google")
+def auth_google():
+    if google_oauth is None:
+        return jsonify({"error": "Google OAuth not configured"}), 503
+    redirect_uri = url_for("auth_google_callback", _external=True)
+    return google_oauth.authorize_redirect(redirect_uri)
+
+
+@app.route("/auth/google/callback")
+def auth_google_callback():
+    if google_oauth is None:
+        return jsonify({"error": "Google OAuth not configured"}), 503
+
+    token = google_oauth.authorize_access_token()
+    userinfo = token.get("userinfo")
+    if not userinfo:
+        userinfo = google_oauth.parse_id_token(token)
+
+    email = (userinfo.get("email") or "").strip().lower()
+    sub = (userinfo.get("sub") or "").strip()
+    if not email or not sub:
+        return jsonify({"error": "Failed to read Google account details"}), 400
+
+    if not is_invited(email):
+        return ("Access denied: your email is not invited.", 403)
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        user = User(
+            google_sub=sub,
+            email=email,
+            display_name=userinfo.get("name", ""),
+            avatar_url=userinfo.get("picture", ""),
+            subscription_tier="free",
+            is_active_user=True,
+        )
+        db.session.add(user)
+    else:
+        user.google_sub = sub
+        user.display_name = userinfo.get("name", user.display_name)
+        user.avatar_url = userinfo.get("picture", user.avatar_url)
+        user.updated_at = datetime.now(timezone.utc)
+
+    db.session.commit()
+    login_user(user)
+    return redirect(url_for("index"))
+
+
+ALLOWED_VIDEO_HOSTS = {
+    "youtube.com",
+    "www.youtube.com",
+    "m.youtube.com",
+    "music.youtube.com",
+    "youtu.be",
+    "www.youtu.be",
+    "youtube-nocookie.com",
+    "www.youtube-nocookie.com",
+}
+
+
+def is_supported_media_url(raw_url):
+    try:
+        parsed = urlparse(raw_url)
+        if parsed.scheme not in {"http", "https"}:
+            return False
+        host = (parsed.hostname or "").lower()
+        return host in ALLOWED_VIDEO_HOSTS
+    except Exception:
+        return False
 
 
 def sanitize_task_id(task_id):
@@ -55,15 +313,22 @@ def sanitize_task_id(task_id):
 
 @app.route("/")
 def index():
+    if AUTH_REQUIRED and not current_user.is_authenticated:
+        return redirect(url_for("login"))
     return render_template("index.html")
 
 
+
 @app.route("/fetch_info", methods=["POST"])
+@api_auth_required
+@limiter.limit("40/minute")
 def fetch_info():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     url = data.get("url", "").strip()
     if not url:
         return jsonify({"error": "No URL provided"}), 400
+    if not is_supported_media_url(url):
+        return jsonify({"error": "Unsupported URL. Only YouTube links are allowed."}), 400
 
     ydl_opts = {
         "quiet": True,
@@ -123,9 +388,158 @@ def fetch_info():
         return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
 
 
+@app.route("/music_search", methods=["POST"])
+@api_auth_required
+@limiter.limit("30/minute")
+def music_search():
+    data = request.get_json() or {}
+    query = data.get("query", "").strip()
+    limit = int(data.get("limit", 10) or 10)
+    limit = max(1, min(limit, 25))
+    if not query:
+        return jsonify({"error": "No query provided"}), 400
+
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": True,
+        "skip_download": True,
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"ytsearch{limit}:{query}", download=False)
+
+        tracks = []
+        for entry in (info or {}).get("entries", []):
+            if not entry:
+                continue
+            track_url = entry.get("webpage_url")
+            if not track_url and entry.get("id"):
+                track_url = f"https://www.youtube.com/watch?v={entry.get('id')}"
+            tracks.append({
+                "title": entry.get("title", "Unknown"),
+                "duration": entry.get("duration", 0),
+                "uploader": entry.get("uploader", ""),
+                "thumbnail": entry.get("thumbnail", ""),
+                "url": track_url or "",
+            })
+
+        return jsonify({"query": query, "count": len(tracks), "tracks": tracks})
+    except Exception as e:
+        return jsonify({"error": f"Search failed: {str(e)}"}), 500
+
+
+@app.route("/video_info", methods=["POST"])
+@api_auth_required
+@limiter.limit("40/minute")
+def video_info():
+    data = request.get_json() or {}
+    url = data.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "No URL provided"}), 400
+    if not is_supported_media_url(url):
+        return jsonify({"error": "Unsupported URL. Only YouTube links are allowed."}), 400
+
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": True,
+        "skip_download": True,
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if not info:
+                return jsonify({"error": "Could not retrieve info"}), 400
+            title = info.get("title", "Unknown")
+            thumbnail = info.get("thumbnail", "")
+            if not thumbnail and info.get("thumbnails"):
+                thumbnail = info["thumbnails"][-1].get("url", "")
+            return jsonify({
+                "title": title,
+                "thumbnail": thumbnail
+            })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/music_stream_url", methods=["POST"])
+@api_auth_required
+@limiter.limit("30/minute")
+def music_stream_url():
+    data = request.get_json() or {}
+    url = data.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "No URL provided"}), 400
+    if not is_supported_media_url(url):
+        return jsonify({"error": "Unsupported URL. Only YouTube links are allowed."}), 400
+
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "format": "bestaudio/best",
+        "noplaylist": True,
+        **(({"ffmpeg_location": FFMPEG_LOCATION}) if FFMPEG_LOCATION else {}),
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+
+        if not info:
+            return jsonify({"error": "No stream info found"}), 404
+
+        if "entries" in info and info.get("entries"):
+            info = info["entries"][0]
+
+        stream_url = info.get("url")
+        if not stream_url:
+            return jsonify({"error": "No playable stream URL found"}), 404
+
+        return jsonify({
+            "stream_url": stream_url,
+            "title": info.get("title", "Track"),
+            "duration": info.get("duration", 0),
+        })
+    except Exception as e:
+        return jsonify({"error": f"Could not get stream URL: {str(e)}"}), 500
+
+
+@app.route("/music_download", methods=["POST"])
+@api_auth_required
+@limiter.limit("10/minute")
+def music_download():
+    data = request.get_json() or {}
+    url = data.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "No URL provided"}), 400
+    if not is_supported_media_url(url):
+        return jsonify({"error": "Unsupported URL. Only YouTube links are allowed."}), 400
+
+    task_id = str(uuid.uuid4())
+    with download_tasks_lock:
+        download_tasks[task_id] = {
+            "status": "starting",
+            "percent": 0,
+            "speed": "",
+            "is_playlist": False,
+        }
+
+    thread = threading.Thread(
+        target=run_download,
+        args=(task_id, url, "best", True, None),
+        daemon=True,
+    )
+    thread.start()
+
+    return jsonify({"task_id": task_id})
+
+
 def progress_hook(task_id):
     def hook(d):
-        task = download_tasks.get(task_id, {})
+        with download_tasks_lock:
+            task = dict(download_tasks.get(task_id, {}))
         info = d.get("info_dict") or {}
         playlist_index = info.get("playlist_index")
         playlist_count = info.get("n_entries") or info.get("playlist_count")
@@ -161,7 +575,8 @@ def progress_hook(task_id):
             })
         elif d["status"] == "error":
             task.update({"status": "error", "error": str(d.get("error", "Unknown error"))})
-        download_tasks[task_id] = task
+        with download_tasks_lock:
+            download_tasks[task_id] = task
     return hook
 
 
@@ -209,16 +624,22 @@ def run_download(task_id, url, fmt_option, audio_only, playlist_items=None):
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
-        download_tasks[task_id]["status"] = "done"
-        download_tasks[task_id]["percent"] = 100
+        with download_tasks_lock:
+            if task_id in download_tasks:
+                download_tasks[task_id]["status"] = "done"
+                download_tasks[task_id]["percent"] = 100
     except Exception as e:
-        download_tasks[task_id]["status"] = "error"
-        download_tasks[task_id]["error"] = str(e)
+        with download_tasks_lock:
+            if task_id in download_tasks:
+                download_tasks[task_id]["status"] = "error"
+                download_tasks[task_id]["error"] = str(e)
 
 
 @app.route("/download", methods=["POST"])
+@api_auth_required
+@limiter.limit("10/minute")
 def start_download():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     url = data.get("url", "").strip()
     resolution = data.get("resolution", "best")
     audio_only = data.get("audio_only", False)
@@ -226,14 +647,17 @@ def start_download():
 
     if not url:
         return jsonify({"error": "No URL provided"}), 400
+    if not is_supported_media_url(url):
+        return jsonify({"error": "Unsupported URL. Only YouTube links are allowed."}), 400
 
     task_id = str(uuid.uuid4())
-    download_tasks[task_id] = {
-        "status": "starting",
-        "percent": 0,
-        "speed": "",
-        "is_playlist": bool(is_playlist),
-    }
+    with download_tasks_lock:
+        download_tasks[task_id] = {
+            "status": "starting",
+            "percent": 0,
+            "speed": "",
+            "is_playlist": bool(is_playlist),
+        }
 
     thread = threading.Thread(
         target=run_download,
@@ -246,15 +670,18 @@ def start_download():
 
 
 @app.route("/progress/<task_id>")
+@api_auth_required
 def get_progress(task_id):
     safe_id = sanitize_task_id(task_id)
     if not safe_id:
         return jsonify({"error": "Invalid task ID"}), 400
-    task = download_tasks.get(safe_id, {"status": "not_found"})
+    with download_tasks_lock:
+        task = dict(download_tasks.get(safe_id, {"status": "not_found"}))
     return jsonify(task)
 
 
 @app.route("/files")
+@api_auth_required
 def list_files():
     """List downloaded files."""
     files = []
@@ -272,6 +699,7 @@ def list_files():
 
 
 @app.route("/download_file/<path:filename>")
+@api_auth_required
 def download_file(filename):
     """Serve a downloaded file safely."""
     # Prevent path traversal
@@ -280,8 +708,9 @@ def download_file(filename):
 
 
 @app.route("/delete_file", methods=["POST"])
+@api_auth_required
 def delete_file():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     filename = os.path.basename(data.get("filename", ""))
     if not filename:
         return jsonify({"error": "No filename"}), 400
@@ -302,13 +731,82 @@ def format_size(size):
     return f"{size} B"
 
 
+@app.route("/api/me", methods=["GET"])
+@api_auth_required
+def api_me():
+    if not current_user.is_authenticated:
+        return jsonify({"authenticated": False, "tier": "free"})
+    return jsonify({
+        "authenticated": True,
+        "email": current_user.email,
+        "display_name": current_user.display_name,
+        "subscription_tier": current_user.subscription_tier,
+    })
+
+
+@app.route("/api/pomodoro/streak", methods=["GET", "POST"])
+@api_auth_required
+def api_pomodoro_streak():
+    if not current_user.is_authenticated:
+        return jsonify({"error": "Authentication required"}), 401
+
+    row = PomodoroStreak.query.filter_by(user_id=current_user.id).first()
+    if row is None:
+        row = PomodoroStreak(user_id=current_user.id, current_streak=0, best_streak=0)
+        db.session.add(row)
+        db.session.commit()
+
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        current = int(data.get("current_streak", row.current_streak) or 0)
+        best = int(data.get("best_streak", max(row.best_streak, current)) or 0)
+        row.current_streak = max(0, current)
+        row.best_streak = max(best, row.current_streak)
+        row.updated_at = datetime.now(timezone.utc)
+        db.session.commit()
+
+    return jsonify({
+        "current_streak": row.current_streak,
+        "best_streak": row.best_streak,
+        "updated_at": row.updated_at.isoformat(),
+    })
+
+
+@app.route("/api/habits", methods=["GET", "POST"])
+@paid_tier_required
+def api_habits():
+    if not current_user.is_authenticated:
+        return jsonify({"error": "Authentication required"}), 401
+
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "Habit name is required"}), 400
+        habit = Habit(user_id=current_user.id, name=name, is_completed=False)
+        db.session.add(habit)
+        db.session.commit()
+
+    habits = Habit.query.filter_by(user_id=current_user.id).order_by(Habit.created_at.desc()).all()
+    return jsonify([
+        {
+            "id": h.id,
+            "name": h.name,
+            "is_completed": h.is_completed,
+            "created_at": h.created_at.isoformat(),
+        }
+        for h in habits
+    ])
+
+
 if __name__ == "__main__":
     host = os.getenv("HOST", "127.0.0.1")
     port = int(os.getenv("PORT", "5000"))
+    debug = os.getenv("FLASK_DEBUG", "0") == "1"
     url = f"http://{host}:{port}"
     print(f"\nYouMe Downloader running at: {url}\n")
 
     if os.getenv("OPEN_BROWSER", "1") == "1":
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
 
-    app.run(debug=False, host=host, port=port, threaded=True)
+    app.run(debug=debug, host=host, port=port, threaded=True)

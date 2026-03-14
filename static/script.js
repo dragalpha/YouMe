@@ -6,17 +6,84 @@ let selectedResolution = "best";
 let isAudioOnly = false;
 let activePolls = {};            // task_id → interval
 
+/* ─── Navigation ────────────────────────────────────────── */
+function showSection(name) {
+  // Update main sections
+  document.querySelectorAll(".app-section").forEach(s => {
+    s.classList.remove("active");
+    // Force reflow to re-trigger staggered children animations
+    void s.offsetWidth; 
+  });
+  
+  const sec = document.getElementById(`sec-${name}`);
+  if (sec) {
+    sec.classList.add("active");
+  }
+
+  // Reset scroll position so short sections (like Settings) are visible immediately.
+  const main = document.querySelector(".main-content");
+  if (main && typeof main.scrollTo === "function") {
+    main.scrollTo({ top: 0, behavior: "auto" });
+  }
+  if (typeof window.scrollTo === "function") {
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }
+
+  // Update sidebar nav items
+  document.querySelectorAll(".nav-item").forEach(b => {
+    b.classList.toggle("active", b.dataset.section === name);
+  });
+  // Update mobile tabs
+  document.querySelectorAll(".mob-tab").forEach(b => {
+    b.classList.toggle("active", b.dataset.section === name);
+  });
+
+  // Lazy-load library when navigating to it
+  if (name === "library") loadFiles();
+}
+
+/* ─── Theme ──────────────────────────────────────────────── */
+function setTheme(name) {
+  const validThemes = ["batman", "hello-kitty", "spiderman", "ironman"];
+  if (!validThemes.includes(name)) return;
+
+  document.documentElement.setAttribute("data-theme", name);
+
+  // Highlight correct option in Settings
+  document.querySelectorAll(".theme-opt").forEach(el => {
+    el.classList.toggle("active", el.dataset.t === name);
+  });
+
+  try { localStorage.setItem("youme_theme", name); } catch (_) {}
+
+  // Re-apply wallpaper for the selected theme so each theme can keep its own default/custom image.
+  loadCustomBackground();
+}
+
+function loadSavedTheme() {
+  try {
+    const saved = localStorage.getItem("youme_theme");
+    if (saved) setTheme(saved);
+  } catch (_) {}
+}
+
 /* ─── Focus Mode State ──────────────────────────────────── */
-const POMODORO_FOCUS_SECONDS = 25 * 60;
-const POMODORO_BREAK_SECONDS = 5 * 60;
+const POMODORO_MODES = {
+  "25-5": { focus: 25 * 60, brk: 5 * 60, label: "25 / 5" },
+  "50-10": { focus: 50 * 60, brk: 10 * 60, label: "50 / 10" },
+};
 
 let focusState = {
   phase: "focus", // focus | break
   running: false,
-  remaining: POMODORO_FOCUS_SECONDS,
+  mode: "25-5",
+  focusSeconds: POMODORO_MODES["25-5"].focus,
+  breakSeconds: POMODORO_MODES["25-5"].brk,
+  remaining: POMODORO_MODES["25-5"].focus,
   sessionsToday: 0,
   intervalId: null,
   audioEnabled: false,
+  audioSource: null, // ambient | track
 };
 
 let audioCtx = null;
@@ -24,11 +91,7 @@ let focusMasterGain = null;
 let currentSoundNodes = [];
 let lofiBeatTimer = null;
 let whiteNoiseBuffer = null;
-
-/* ─── Stream Player State ───────────────────────────────── */
-let streamState = {
-  playing: false,
-};
+let focusTrackCache = {};
 
 /* ─── Toast ──────────────────────────────────────────────── */
 let toastEl = null;
@@ -291,27 +354,28 @@ async function loadFiles() {
 function renderFiles(files) {
   const box = document.getElementById("fileList");
   if (!files.length) {
-    box.innerHTML = `<p class="empty-msg">No files yet.</p>`;
+    box.innerHTML = `<p class="empty-msg">No files yet. Download something!</p>`;
     return;
   }
   const html = files.map(f => {
     const isAudio = /\.(mp3|m4a|aac|ogg|flac|wav)$/i.test(f.name);
     const icon = isAudio ? "🎵" : "🎬";
     const safeEnc = encodeURIComponent(f.name);
+    const cardClass = `lib-card${isAudio ? " audio" : ""}`;
     return `
-      <div class="file-item">
-        <span class="file-icon">${icon}</span>
-        <span class="file-name" title="${escHtml(f.name)}">${escHtml(f.name)}</span>
-        <span class="file-size">${escHtml(f.size_str)}</span>
-        <div class="file-actions">
-          <a href="/download_file/${safeEnc}" download>
-            <button class="icon-btn" title="Download">⬇</button>
-          </a>
-          <button class="icon-btn delete" title="Delete" onclick="deleteFile(${JSON.stringify(f.name)})">🗑</button>
+      <div class="${cardClass}">
+        <div class="lib-thumb" title="${escHtml(f.name)}">${icon}</div>
+        <div class="lib-info">
+          <div class="lib-name" title="${escHtml(f.name)}">${escHtml(f.name)}</div>
+          <div class="lib-size">${escHtml(f.size_str)}</div>
+          <div class="lib-actions">
+            <a class="lib-btn" href="/download_file/${safeEnc}" download title="Download">⬇ Save</a>
+            <button class="lib-btn del" title="Delete" onclick="deleteFile(${JSON.stringify(f.name)})">🗑 Del</button>
+          </div>
         </div>
       </div>`;
   }).join("");
-  box.innerHTML = `<div class="file-list">${html}</div>`;
+  box.innerHTML = html;
 }
 
 async function deleteFile(filename) {
@@ -367,10 +431,26 @@ function focusEls() {
     startBtn: document.getElementById("focusStartBtn"),
     resetBtn: document.getElementById("focusResetBtn"),
     soundMode: document.getElementById("soundMode"),
+    audioSelect: document.getElementById("focusAudioSelect"),
     soundToggle: document.getElementById("soundToggleBtn"),
     autoSound: document.getElementById("autoSound"),
     volume: document.getElementById("soundVolume"),
+    modeSelect: document.getElementById("pomodoroMode"),
+    musicQuery: document.getElementById("focusMusicQuery"),
+    musicSearchBtn: document.getElementById("focusMusicSearchBtn"),
+    musicDownloadBtn: document.getElementById("focusMusicDownloadBtn"),
+    trackAudio: document.getElementById("focusTrackAudio"),
   };
+}
+
+const RING_CIRCUMFERENCE = 527.8; // 2π × r=84
+
+function updateTimerRing() {
+  const ring = document.getElementById("timerRing");
+  if (!ring) return;
+  const total = focusState.phase === "focus" ? focusState.focusSeconds : focusState.breakSeconds;
+  const progress = total > 0 ? focusState.remaining / total : 1;
+  ring.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - progress));
 }
 
 function updateFocusUI() {
@@ -380,20 +460,47 @@ function updateFocusUI() {
   els.timer.textContent = formatClock(focusState.remaining);
   els.sessions.textContent = String(focusState.sessionsToday);
   els.cycle.textContent = focusState.phase === "focus" ? "Work" : "Break";
+  // Update the second cycle label in session-row
+  const cycleLabel = document.getElementById("focusCycleLabel");
+  if (cycleLabel) cycleLabel.textContent = focusState.phase === "focus" ? "Work" : "Break";
+
   els.phase.textContent = focusState.phase === "focus" ? "Focus" : "Break";
   els.phase.classList.toggle("break", focusState.phase === "break");
   els.startBtn.textContent = focusState.running ? "Pause" : "Start";
-  els.soundToggle.textContent = focusState.audioEnabled ? "Pause Sound" : "Play Sound";
+
+  // Update sound toggle button label
+  if (els.soundToggle) {
+    els.soundToggle.textContent = focusState.audioEnabled ? "⏸" : "▶";
+  }
+
+  if (els.modeSelect) {
+    els.modeSelect.value = focusState.mode;
+  }
 
   if (focusState.phase === "focus") {
     els.status.textContent = focusState.running
       ? "Focus session in progress. Stay on one task."
-      : "Ready for a 25-minute Pomodoro.";
+      : `Ready for a ${POMODORO_MODES[focusState.mode].label} Pomodoro.`;
   } else {
     els.status.textContent = focusState.running
       ? "Short break running. Breathe and reset."
       : "Break is paused.";
   }
+
+  updateTimerRing();
+}
+
+function setPomodoroMode(mode) {
+  if (!POMODORO_MODES[mode]) return;
+  focusState.mode = mode;
+  focusState.focusSeconds = POMODORO_MODES[mode].focus;
+  focusState.breakSeconds = POMODORO_MODES[mode].brk;
+
+  if (!focusState.running) {
+    focusState.phase = "focus";
+    focusState.remaining = focusState.focusSeconds;
+  }
+  updateFocusUI();
 }
 
 function todayKey() {
@@ -448,15 +555,15 @@ function onFocusPhaseComplete() {
     focusState.sessionsToday += 1;
     saveFocusSessions();
     focusState.phase = "break";
-    focusState.remaining = POMODORO_BREAK_SECONDS;
-    fadeOutSound(1.2);
+    focusState.remaining = focusState.breakSeconds;
+    stopFocusAudio(1.2);
     showToast("Focus session complete. Break started.", "success");
   } else {
     focusState.phase = "focus";
-    focusState.remaining = POMODORO_FOCUS_SECONDS;
+    focusState.remaining = focusState.focusSeconds;
     const els = focusEls();
     if (els.autoSound.checked) {
-      playAmbient(els.soundMode.value);
+      playSelectedFocusAudio();
     }
     showToast("Break complete. Next focus session started.", "success");
   }
@@ -467,11 +574,11 @@ function toggleFocusTimer() {
   const els = focusEls();
 
   if (focusState.running) {
-    if (focusState.phase === "focus" && els.autoSound.checked) {
-      playAmbient(els.soundMode.value);
+    if (focusState.phase === "focus" && els.autoSound?.checked) {
+      playSelectedFocusAudio();
     }
     if (focusState.phase === "break") {
-      fadeOutSound(1.1);
+      stopFocusAudio(1.1);
     }
   }
   updateFocusUI();
@@ -480,8 +587,8 @@ function toggleFocusTimer() {
 function resetFocusTimer() {
   focusState.phase = "focus";
   focusState.running = false;
-  focusState.remaining = POMODORO_FOCUS_SECONDS;
-  fadeOutSound(0.9);
+  focusState.remaining = focusState.focusSeconds;
+  stopFocusAudio(0.9);
   updateFocusUI();
 }
 
@@ -535,10 +642,13 @@ function stopCurrentAmbient() {
     }
   });
   currentSoundNodes = [];
-  focusState.audioEnabled = false;
+  if (focusState.audioSource === "ambient") {
+    focusState.audioEnabled = false;
+    focusState.audioSource = null;
+  }
 }
 
-function fadeOutSound(seconds = 1) {
+function fadeOutAmbient(seconds = 1) {
   if (!audioCtx || !focusMasterGain) return;
   const now = audioCtx.currentTime;
   focusMasterGain.gain.cancelScheduledValues(now);
@@ -719,145 +829,335 @@ function playAmbient(mode) {
   const volume = Number((focusEls().volume?.value || 35) / 100);
   focusMasterGain.gain.linearRampToValueAtTime(Math.max(0.0001, volume), now + 0.7);
   focusState.audioEnabled = true;
+  focusState.audioSource = "ambient";
   updateFocusUI();
 }
 
-function toggleAmbientManual() {
-  if (focusState.audioEnabled) {
-    fadeOutSound(0.8);
+function getSelectedFocusAudio() {
+  const value = focusEls().audioSelect?.value || "ambient:lofi";
+  if (value.startsWith("ambient:")) {
+    return { type: "ambient", mode: value.split(":")[1] || "lofi" };
+  }
+  if (value.startsWith("track:")) {
+    return { type: "track", url: value.slice("track:".length) };
+  }
+  return { type: "ambient", mode: "lofi" };
+}
+
+function stopFocusTrack() {
+  const els = focusEls();
+  if (!els.trackAudio) return;
+  try {
+    els.trackAudio.pause();
+  } catch (_) {
+    // ignore
+  }
+}
+
+function stopFocusAudio(seconds = 0.8) {
+  if (focusState.audioSource === "track") {
+    stopFocusTrack();
+    focusState.audioEnabled = false;
+    focusState.audioSource = null;
+    updateFocusUI();
     return;
   }
+  if (focusState.audioSource === "ambient") {
+    fadeOutAmbient(seconds);
+  }
+}
+
+async function playFocusTrack(trackUrl) {
   const els = focusEls();
-  playAmbient(els.soundMode.value);
+  if (!els.trackAudio || !trackUrl) return;
+
+  stopCurrentAmbient();
+  focusState.audioEnabled = false;
+  focusState.audioSource = null;
+
+  let streamUrl = focusTrackCache[trackUrl];
+  if (!streamUrl) {
+    const res = await fetch("/music_stream_url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: trackUrl }),
+    });
+    const data = await res.json();
+    if (data.error || !data.stream_url) {
+      throw new Error(data.error || "No stream URL");
+    }
+    streamUrl = data.stream_url;
+    focusTrackCache[trackUrl] = streamUrl;
+  }
+
+  els.trackAudio.src = streamUrl;
+  els.trackAudio.volume = Number(els.volume?.value || 35) / 100;
+  await els.trackAudio.play();
+  focusState.audioEnabled = true;
+  focusState.audioSource = "track";
+  updateFocusUI();
+}
+
+async function playSelectedFocusAudio() {
+  const selected = getSelectedFocusAudio();
+  if (selected.type === "ambient") {
+    stopFocusTrack();
+    playAmbient(selected.mode);
+    return;
+  }
+  try {
+    await playFocusTrack(selected.url);
+  } catch (e) {
+    showToast(`Track play failed: ${e.message || "unknown"}`, "error");
+  }
+}
+
+async function toggleFocusAudioManual() {
+  if (focusState.audioEnabled) {
+    stopFocusAudio(0.8);
+    return;
+  }
+  await playSelectedFocusAudio();
+}
+
+async function searchFocusMusic() {
+  const els = focusEls();
+  const query = (els.musicQuery?.value || "").trim();
+  if (!query) {
+    showToast("Type a song or lofi query first", "error");
+    return;
+  }
+
+  els.musicSearchBtn.disabled = true;
+  els.musicSearchBtn.textContent = "Searching...";
+  try {
+    const res = await fetch("/music_search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, limit: 12 }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      showToast(data.error, "error");
+      return;
+    }
+
+    const sel = els.audioSelect;
+    const ambientOptions = Array.from(sel.options).filter(o => o.value.startsWith("ambient:"));
+    sel.innerHTML = "";
+    ambientOptions.forEach(o => sel.appendChild(o));
+
+    (data.tracks || []).forEach(track => {
+      if (!track.url) return;
+      const opt = document.createElement("option");
+      const dur = track.duration ? ` (${formatDuration(track.duration)})` : "";
+      opt.value = `track:${track.url}`;
+      opt.textContent = `🎵 ${track.title}${dur}`;
+      sel.appendChild(opt);
+    });
+
+    if (sel.options.length > ambientOptions.length) {
+      sel.selectedIndex = ambientOptions.length;
+    }
+    showToast(`Found ${data.count || 0} tracks`, "success");
+    updateLofiButtons();
+  } catch (_) {
+    showToast("Music search failed", "error");
+  } finally {
+    els.musicSearchBtn.disabled = false;
+    els.musicSearchBtn.textContent = "Search";
+  }
+}
+
+/* ─── Custom Lofi Logic ─────────────────────────────────── */
+let customLofiList = [];
+
+function loadCustomLofi() {
+  try {
+    const raw = localStorage.getItem("youme_custom_lofi");
+    customLofiList = raw ? JSON.parse(raw) : [];
+  } catch (_) {
+    customLofiList = [];
+  }
+  renderCustomLofiOptions();
+}
+
+function renderCustomLofiOptions() {
+  const group = document.getElementById("myCustomLofiGroup");
+  if (!group) return;
+  group.innerHTML = "";
+  customLofiList.forEach(t => {
+    const opt = document.createElement("option");
+    opt.value = `track:${t.url}`;
+    opt.textContent = `⭐ ${t.title}`;
+    group.appendChild(opt);
+  });
+}
+
+function updateLofiButtons() {
+  const btnSave = document.getElementById("btnSaveLofi");
+  const btnRemove = document.getElementById("btnRemoveLofi");
+  if (!btnSave || !btnRemove) return;
+
+  const sel = getSelectedFocusAudio();
+  if (sel.type !== "track") {
+    btnSave.style.display = "none";
+    btnRemove.style.display = "none";
+    return;
+  }
+
+  const isSaved = customLofiList.some(t => t.url === sel.url);
+  if (isSaved) {
+    btnSave.style.display = "none";
+    btnRemove.style.display = "inline-flex";
+  } else {
+    btnSave.style.display = "inline-flex";
+    btnRemove.style.display = "none";
+  }
+}
+
+function saveFocusTrack() {
+  const selectEl = document.getElementById("focusAudioSelect");
+  if (!selectEl) return;
+  const opt = selectEl.options[selectEl.selectedIndex];
+  const url = opt.value.replace("track:", "");
+  let title = opt.textContent.replace("🎵 ", "").trim();
+  // Strip duration if present
+  title = title.replace(/\s\([\d:]+\)$/, "");
+
+  if (customLofiList.some(t => t.url === url)) return;
+
+  customLofiList.push({ title, url });
+  localStorage.setItem("youme_custom_lofi", JSON.stringify(customLofiList));
+  renderCustomLofiOptions();
+  updateLofiButtons();
+  showToast("Track saved to Custom Lofi", "success");
+}
+
+function removeFocusTrack() {
+  const sel = getSelectedFocusAudio();
+  if (sel.type !== "track") return;
+
+  customLofiList = customLofiList.filter(t => t.url !== sel.url);
+  localStorage.setItem("youme_custom_lofi", JSON.stringify(customLofiList));
+  
+  // fallback selection
+  const selectEl = document.getElementById("focusAudioSelect");
+  selectEl.value = "ambient:lofi";
+  
+  renderCustomLofiOptions();
+  updateLofiButtons();
+  showToast("Track removed from saved list", "success");
+  if (focusState.audioEnabled) playSelectedFocusAudio();
+}
+
+async function downloadSelectedFocusTrack() {
+  const selected = getSelectedFocusAudio();
+  if (selected.type !== "track") {
+    showToast("Select a searched track to download", "error");
+    return;
+  }
+
+  const res = await fetch("/music_download", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: selected.url }),
+  });
+  const data = await res.json();
+  if (data.error) {
+    showToast(data.error, "error");
+    return;
+  }
+
+  showElements("activeCard");
+  addDownloadItem(data.task_id, "🎵 Focus Music Download");
+  pollProgress(data.task_id);
+  showToast("Music download started", "success");
 }
 
 function bindFocusEvents() {
   const els = focusEls();
   if (!els.startBtn) return;
 
-  els.startBtn.addEventListener("click", toggleFocusTimer);
-  els.resetBtn.addEventListener("click", resetFocusTimer);
-  els.soundToggle.addEventListener("click", toggleAmbientManual);
+  // startBtn, resetBtn, soundToggle, musicSearchBtn, musicDownloadBtn
+  // are handled via inline onclick in HTML — only bind non-inline events here.
 
-  els.soundMode.addEventListener("change", () => {
-    if (focusState.audioEnabled) {
-      playAmbient(els.soundMode.value);
-    }
+  els.audioSelect.addEventListener("change", () => {
+    if (focusState.audioEnabled) playSelectedFocusAudio();
   });
 
-  els.volume.addEventListener("input", () => {
-    if (!audioCtx || !focusMasterGain) return;
+  els.musicQuery?.addEventListener("keydown", e => {
+    if (e.key === "Enter") searchFocusMusic();
+  });
+
+  els.volume?.addEventListener("input", () => {
     const vol = Math.max(0.0001, Number(els.volume.value) / 100);
+    if (focusState.audioSource === "track" && els.trackAudio) {
+      els.trackAudio.volume = vol;
+      return;
+    }
+    if (!audioCtx || !focusMasterGain) return;
     const now = audioCtx.currentTime;
     focusMasterGain.gain.cancelScheduledValues(now);
     focusMasterGain.gain.linearRampToValueAtTime(vol, now + 0.1);
   });
+
+  els.trackAudio?.addEventListener("pause", () => {
+    if (focusState.audioSource === "track") {
+      focusState.audioEnabled = false;
+      focusState.audioSource = null;
+      updateFocusUI();
+    }
+  });
+
+  els.trackAudio?.addEventListener("playing", () => {
+    focusState.audioEnabled = true;
+    focusState.audioSource = "track";
+    updateFocusUI();
+  });
 }
 
 function initFocusMode() {
+  setPomodoroMode("25-5");
   loadFocusSessions();
   startTimerLoop();
   bindFocusEvents();
   updateFocusUI();
 }
 
-/* ─── Music Stream Player ───────────────────────────────── */
-function streamEls() {
+/* ─── Mini Notepad ──────────────────────────────────────── */
+function notepadEls() {
   return {
-    mode: document.getElementById("streamMode"),
-    toggleBtn: document.getElementById("streamToggleBtn"),
-    volume: document.getElementById("streamVolume"),
-    status: document.getElementById("streamStatus"),
-    audio: document.getElementById("streamAudio"),
+    area: document.getElementById("focusNotepad"),
+    clearBtn: document.getElementById("focusNotepadClearBtn"),
   };
 }
 
-function updateStreamUI() {
-  const els = streamEls();
-  if (!els.toggleBtn) return;
+function initNotepad() {
+  const els = notepadEls();
+  if (!els.area) return;
 
-  els.toggleBtn.textContent = streamState.playing ? "Pause Stream" : "Play Stream";
-  els.status.textContent = streamState.playing ? "Stream is live." : "Stream is stopped.";
-  els.status.classList.toggle("live", streamState.playing);
+  const key = "youme_focus_notepad";
+  els.area.value = localStorage.getItem(key) || "";
+
+  els.area.addEventListener("input", () => {
+    localStorage.setItem(key, els.area.value);
+  });
+
+  els.clearBtn?.addEventListener("click", () => {
+    els.area.value = "";
+    localStorage.removeItem(key);
+    showToast("Notepad cleared", "success");
+  });
 }
 
-function syncStreamSource() {
-  const els = streamEls();
-  if (!els.audio || !els.mode) return;
-  if (els.audio.src !== els.mode.value) {
-    els.audio.src = els.mode.value;
-  }
-}
-
-async function toggleStreamPlayback() {
-  const els = streamEls();
-  if (!els.audio) return;
-
-  if (streamState.playing) {
-    els.audio.pause();
-    streamState.playing = false;
-    updateStreamUI();
-    return;
-  }
-
-  try {
-    syncStreamSource();
-    await els.audio.play();
-    streamState.playing = true;
-    updateStreamUI();
-  } catch (_) {
-    streamState.playing = false;
-    updateStreamUI();
-    showToast("Could not start stream. Try another source.", "error");
-  }
-}
-
-function initStreamPlayer() {
-  const els = streamEls();
-  if (!els.audio) return;
-
-  els.audio.volume = Number(els.volume?.value || 40) / 100;
-  els.toggleBtn?.addEventListener("click", toggleStreamPlayback);
-
-  els.mode?.addEventListener("change", async () => {
-    const wasPlaying = streamState.playing;
-    streamState.playing = false;
-    els.audio.pause();
-    syncStreamSource();
-    if (wasPlaying) {
-      try {
-        await els.audio.play();
-        streamState.playing = true;
-      } catch (_) {
-        streamState.playing = false;
-        showToast("Stream switch failed. Try Play again.", "error");
-      }
-    }
-    updateStreamUI();
-  });
-
-  els.volume?.addEventListener("input", () => {
-    els.audio.volume = Number(els.volume.value) / 100;
-  });
-
-  els.audio.addEventListener("pause", () => {
-    streamState.playing = false;
-    updateStreamUI();
-  });
-
-  els.audio.addEventListener("playing", () => {
-    streamState.playing = true;
-    updateStreamUI();
-  });
-
-  els.audio.addEventListener("error", () => {
-    streamState.playing = false;
-    updateStreamUI();
-    showToast("Stream error. Try another stream.", "error");
-  });
-
-  syncStreamSource();
-  updateStreamUI();
+/* Expose clearNotepad for inline onclick */
+function clearNotepad() {
+  const el = document.getElementById("focusNotepad");
+  if (!el) return;
+  el.value = "";
+  try { localStorage.removeItem("youme_focus_notepad"); } catch (_) {}
+  showToast("Notepad cleared", "success");
 }
 
 function bindUrlEnter() {
@@ -869,10 +1169,535 @@ function bindUrlEnter() {
 }
 
 function initApp() {
+  loadSavedTheme();
   bindUrlEnter();
-  loadFiles();
   initFocusMode();
-  initStreamPlayer();
+  initNotepad();
+  if (typeof loadCustomLofi === "function") loadCustomLofi();
+  loadWatchlist();
+  loadPlanner();
+  initCustomBackground();
+  loadCustomBackground();
+  // Library loads on demand when user navigates to it
+}
+
+/* ─── Watchlist Logic ──────────────────────────────────── */
+let watchlistItems = [];
+
+function loadWatchlist() {
+  try {
+    const raw = localStorage.getItem("youme_watchlist");
+    watchlistItems = raw ? JSON.parse(raw) : [];
+  } catch (_) {
+    watchlistItems = [];
+  }
+  renderWatchlist();
+}
+
+function saveWatchlist() {
+  localStorage.setItem("youme_watchlist", JSON.stringify(watchlistItems));
+  renderWatchlist();
+}
+
+async function addWatchlistItem() {
+  const input = document.getElementById("watchlistInput");
+  const url = input.value.trim();
+  if (!url) {
+    showToast("Please enter a YouTube URL", "error");
+    return;
+  }
+  
+  const tempId = Date.now().toString();
+  // Optimistic UI
+  watchlistItems.push({
+    id: tempId,
+    url: url,
+    title: "Loading...",
+    thumb: "",
+    done: false,
+    category: "Productive",
+    learned: ""
+  });
+  input.value = "";
+  renderWatchlist();
+  
+  try {
+    const res = await fetch("/video_info", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    
+    // Update the item
+    const idx = watchlistItems.findIndex(i => i.id === tempId);
+    if (idx !== -1) {
+      watchlistItems[idx].title = data.title;
+      watchlistItems[idx].thumb = data.thumbnail;
+      saveWatchlist();
+      showToast("Added to Watchlist", "success");
+    }
+  } catch (err) {
+    watchlistItems = watchlistItems.filter(i => i.id !== tempId);
+    renderWatchlist();
+    showToast("Failed to fetch video info: " + err.message, "error");
+  }
+}
+
+function toggleWatchlistDone(id) {
+  const item = watchlistItems.find(i => i.id === id);
+  if (item) {
+    item.done = !item.done;
+    saveWatchlist();
+  }
+}
+
+function updateWatchlistCategory(id, val) {
+  const item = watchlistItems.find(i => i.id === id);
+  if (item) { item.category = val; saveWatchlist(); }
+}
+
+function updateWatchlistLearned(id, val) {
+  const item = watchlistItems.find(i => i.id === id);
+  if (item) { item.learned = val; saveWatchlist(); }
+}
+
+function deleteWatchlistItem(id) {
+  watchlistItems = watchlistItems.filter(i => i.id !== id);
+  saveWatchlist();
+}
+
+function renderWatchlist() {
+  const grid = document.getElementById("watchlistGrid");
+  if (!grid) return;
+  
+  if (watchlistItems.length === 0) {
+    grid.innerHTML = '<p class="empty-msg">No watchlist items yet.</p>';
+    return;
+  }
+  
+  grid.innerHTML = "";
+  watchlistItems.forEach(item => {
+    const div = document.createElement("div");
+    div.className = "lib-card";
+    
+    const thumbHtml = item.thumb 
+      ? `<img src="${item.thumb}" class="lib-thumb" alt="Thumbnail">`
+      : `<div class="lib-thumb" style="display:flex;align-items:center;justify-content:center;background:#333;color:#888;">⏳</div>`;
+      
+    div.innerHTML = `
+      ${thumbHtml}
+      <div class="lib-info" style="display:flex; flex-direction:column; gap:8px;">
+        <h4 class="lib-title" style="${item.done ? 'text-decoration:line-through;opacity:0.6;' : ''}">${item.title}</h4>
+        
+        <div style="display:flex; gap:10px; align-items:center;">
+          <input type="checkbox" ${item.done ? 'checked' : ''} onchange="toggleWatchlistDone('${item.id}')" style="cursor:pointer; transform:scale(1.2);">
+          <select class="dash-select compact" onchange="updateWatchlistCategory('${item.id}', this.value)" style="flex:1;">
+            <option value="Productive" ${item.category === 'Productive' ? 'selected' : ''}>Productive</option>
+            <option value="Good Habit" ${item.category === 'Good Habit' ? 'selected' : ''}>Good Habit</option>
+            <option value="Bad Habit" ${item.category === 'Bad Habit' ? 'selected' : ''}>Bad Habit</option>
+            <option value="Time Pass" ${item.category === 'Time Pass' ? 'selected' : ''}>Time Pass</option>
+            <option value="Entertainment" ${item.category === 'Entertainment' ? 'selected' : ''}>Entertainment</option>
+          </select>
+        </div>
+        
+        <input type="text" class="dash-input compact" placeholder="What was learned?" value="${item.learned}" onchange="updateWatchlistLearned('${item.id}', this.value)" style="margin-top:4px;">
+      </div>
+      <button class="lib-del" onclick="deleteWatchlistItem('${item.id}')" title="Delete">🗑</button>
+    `;
+    grid.appendChild(div);
+  });
+}
+
+/* ─── Planner Logic ────────────────────────────────────── */
+let plannerTasks = [];
+
+function loadPlanner() {
+  try {
+    const raw = localStorage.getItem("youme_planner");
+    plannerTasks = raw ? JSON.parse(raw) : [];
+  } catch (_) {
+    plannerTasks = [];
+  }
+  renderPlanner();
+}
+
+function savePlanner() {
+  localStorage.setItem("youme_planner", JSON.stringify(plannerTasks));
+  renderPlanner();
+}
+
+function addPlannerTask() {
+  const actName = document.getElementById("planActivity").value.trim();
+  if (!actName) {
+    showToast("Activity name is required", "error");
+    return;
+  }
+  const time = document.getElementById("planTime").value.trim();
+  const place = document.getElementById("planPlace").value.trim();
+  const after = document.getElementById("planAfter").value.trim();
+  const cat = document.getElementById("planCategory").value;
+  
+  plannerTasks.push({
+    id: Date.now().toString(),
+    actName, time, place, after, cat,
+    done: false,
+    reason: ""
+  });
+  
+  document.getElementById("planActivity").value = "";
+  document.getElementById("planTime").value = "";
+  document.getElementById("planPlace").value = "";
+  document.getElementById("planAfter").value = "";
+  
+  savePlanner();
+  showToast("Activity added", "success");
+}
+
+function togglePlannerDone(id) {
+  const t = plannerTasks.find(i => i.id === id);
+  if (t) {
+    t.done = !t.done;
+    if (t.done) t.reason = ""; // clear reason if marked done
+    savePlanner();
+  }
+}
+
+function updatePlannerReason(id, val) {
+  const t = plannerTasks.find(i => i.id === id);
+  if (t) { t.reason = val; savePlanner(); }
+}
+
+function deletePlannerTask(id) {
+  plannerTasks = plannerTasks.filter(i => i.id !== id);
+  savePlanner();
+}
+
+function renderPlanner() {
+  const list = document.getElementById("plannerList");
+  if (!list) return;
+  
+  if (plannerTasks.length === 0) {
+    list.innerHTML = '<p class="empty-msg">No activities planned.</p>';
+    renderGraph();
+    return;
+  }
+  
+  list.innerHTML = "";
+  plannerTasks.forEach(t => {
+    const div = document.createElement("div");
+    div.className = "card";
+    div.style.padding = "16px";
+    div.style.marginBottom = "0";
+    div.style.position = "relative";
+    
+    let meta = [];
+    if (t.time) meta.push(`⌚ ${t.time}`);
+    if (t.place) meta.push(`📍 ${t.place}`);
+    if (t.after) meta.push(`↳ After: ${t.after}`);
+    
+    // Determine color tick based on category
+    let catColor = "var(--text-dim)";
+    if (t.cat === "Studying" || t.cat === "Productive") catColor = "var(--green)";
+    if (t.cat === "Time Pass") catColor = "var(--red)";
+    if (t.cat === "Experimenting" || t.cat === "Exploring") catColor = "var(--accent)";
+
+    div.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div style="display:flex; gap:12px; align-items:flex-start; flex:1;">
+          <input type="checkbox" ${t.done ? 'checked' : ''} onchange="togglePlannerDone('${t.id}')" style="cursor:pointer; transform:scale(1.4); margin-top:4px;">
+          <div style="flex:1;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <h4 style="margin:0; font-size:1.1rem; ${t.done ? 'text-decoration:line-through;opacity:0.6;' : ''}">${t.actName}</h4>
+              <span style="font-size:0.7rem; padding:2px 6px; border-radius:4px; border:1px solid ${catColor}; color:${catColor};">${t.cat}</span>
+            </div>
+            ${meta.length ? `<p style="font-size:0.85rem; color:var(--text-dim); margin:6px 0 0 0;">${meta.join(' &nbsp;•&nbsp; ')}</p>` : ''}
+            
+            ${!t.done ? `
+              <input type="text" class="dash-input compact" placeholder="Reason if not done/skipped?" value="${t.reason || ''}" onchange="updatePlannerReason('${t.id}', this.value)" style="margin-top:10px; max-width:100%; font-size:0.85rem; padding:6px 10px;">
+            ` : ''}
+          </div>
+        </div>
+        <button class="btn btn-icon-round" onclick="deletePlannerTask('${t.id}')" style="width:28px; height:28px; font-size:0.8rem; background:rgba(255,50,50,0.1); color:var(--red);">✖</button>
+      </div>
+    `;
+    list.appendChild(div);
+  });
+  
+  renderGraph();
+}
+
+function renderGraph() {
+  const container = document.getElementById("plannerGraph");
+  const scoreEl = document.getElementById("plannerScore");
+  if (!container || !scoreEl) return;
+  
+  container.innerHTML = "";
+  
+  let score = 0;
+  
+  // Calculate score and build bars based on tasks
+  // Productive Done = +10, Time Pass Done = -5
+  // Productive Undone = -5, Time Pass Undone = 0
+  
+  const widthPerBar = Math.floor(100 / Math.max(1, plannerTasks.length));
+  
+  plannerTasks.forEach((t, i) => {
+    let delta = 0;
+    if (t.done) {
+      if (t.cat === "Studying" || t.cat === "Experimenting" || t.cat === "Exploring") delta = 10;
+      if (t.cat === "Time Pass") delta = -5;
+    } else {
+      if (t.cat === "Studying" || t.cat === "Experimenting" || t.cat === "Exploring") delta = -5;
+    }
+    
+    score += delta;
+    
+    // Draw bar representing cumulative trend
+    const bar = document.createElement("div");
+    const h = Math.max(10, Math.min(100, 50 + (score * 2))); // normalize to 10-100%
+    bar.style.height = `${h}%`;
+    bar.style.flex = "1";
+    bar.style.borderRadius = "4px 4px 0 0";
+    bar.style.transition = "all 0.4s ease";
+    
+    if (score > 0) bar.style.background = "var(--green)";
+    else if (score < 0) bar.style.background = "var(--red)";
+    else bar.style.background = "var(--text-dim)";
+    
+    bar.title = `Task: ${t.actName} | Delta: ${delta > 0 ? '+'+delta : delta}`;
+    container.appendChild(bar);
+  });
+  
+  // If no tasks, default state
+  if (plannerTasks.length === 0) {
+    const defaultBar = document.createElement("div");
+    defaultBar.style.height = "5%";
+    defaultBar.style.flex = "1";
+    defaultBar.style.background = "var(--text-dim)";
+    container.appendChild(defaultBar);
+  }
+  
+  scoreEl.textContent = `Daily Score: ${score > 0 ? '+' : ''}${score}`;
+}
+
+/* ─── Custom Background Logic ────────────────────────────── */
+function getActiveTheme() {
+  return document.documentElement.getAttribute("data-theme") || "batman";
+}
+
+function getCustomBackgroundKey(themeName) {
+  return `youme_custom_bg_${themeName}`;
+}
+
+function runWallpaperMigrations() {
+  // One-time reset for Spiderman theme so the new built-in wallpaper is visible.
+  const migrationKey = "youme_wallpaper_migration_spiderman_v2";
+  if (localStorage.getItem(migrationKey)) return;
+
+  localStorage.removeItem("youme_custom_bg_spiderman");
+  localStorage.removeItem("youme_custom_bg"); // legacy pre-theme-specific key
+  localStorage.setItem(migrationKey, "1");
+}
+
+function loadCustomBackground() {
+  try {
+    runWallpaperMigrations();
+    const bgLayer = document.querySelector('.bg-layer');
+    const themeName = getActiveTheme();
+    const bgData = localStorage.getItem(getCustomBackgroundKey(themeName));
+    if (bgData) {
+      applyCustomBackground(bgData);
+      const hint = document.getElementById("customBgFileHint");
+      if (hint) hint.textContent = "Custom wallpaper is active.";
+    } else if (bgLayer) {
+      // Clear inline background so CSS theme default wallpaper is visible.
+      bgLayer.style.backgroundImage = "";
+      bgLayer.style.backgroundPosition = "";
+      bgLayer.style.backgroundSize = "";
+
+      const hint = document.getElementById("customBgFileHint");
+      if (hint) hint.textContent = "No custom image selected.";
+    }
+  } catch (_) {}
+}
+
+function applyCustomBackground(dataUrl) {
+  const bgLayer = document.querySelector('.bg-layer');
+  if (bgLayer) {
+    bgLayer.style.backgroundImage = `url('${dataUrl}')`;
+    bgLayer.style.backgroundPosition = "center";
+    bgLayer.style.backgroundSize = "cover";
+  }
+}
+
+function clearCustomBackground() {
+  try {
+    localStorage.removeItem(getCustomBackgroundKey(getActiveTheme()));
+  } catch (_) {}
+  const bgLayer = document.querySelector('.bg-layer');
+  if (bgLayer) {
+    bgLayer.style.backgroundImage = "";
+    bgLayer.style.backgroundPosition = "";
+    bgLayer.style.backgroundSize = "";
+  }
+  const input = document.getElementById("customBgInput");
+  if (input) input.value = "";
+  const hint = document.getElementById("customBgFileHint");
+  if (hint) hint.textContent = "No custom image selected.";
+  showToast("Custom wallpaper cleared", "success");
+}
+
+let cropper = null;
+
+function getCropAspectRatio(value) {
+  if (value === "free") return NaN;
+  if (value === "16:9") return 16 / 9;
+  if (value === "4:3") return 4 / 3;
+  if (value === "1:1") return 1;
+  return window.innerWidth / window.innerHeight;
+}
+
+function setCropAspectRatio(value) {
+  if (!cropper) return;
+  cropper.setAspectRatio(getCropAspectRatio(value));
+}
+
+function bindCropModalInteractions() {
+  const modal = document.getElementById("cropModal");
+  if (!modal || modal.dataset.bound === "true") return;
+
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) closeCropModal();
+  });
+
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && modal.style.display === "flex") {
+      closeCropModal();
+    }
+  });
+
+  modal.dataset.bound = "true";
+}
+
+function getWallpaperExportSize() {
+  const viewportWidth = Math.max(1, window.innerWidth || 1366);
+  const viewportHeight = Math.max(1, window.innerHeight || 768);
+  const ratio = viewportWidth / viewportHeight;
+
+  const maxWidth = 1920;
+  const maxHeight = 1080;
+  const scale = Math.min(1, maxWidth / viewportWidth, maxHeight / viewportHeight);
+  const width = Math.round(viewportWidth * scale);
+  const height = Math.round(width / ratio);
+  return { width: Math.max(320, width), height: Math.max(180, height) };
+}
+
+function openImageInCropper(file) {
+  if (!file || !file.type.startsWith("image/")) {
+    showToast("Please drop an image file (PNG, JPG, WEBP…)", "error");
+    return;
+  }
+  if (typeof Cropper === "undefined") {
+    showToast("Cropper failed to load. Refresh and try again.", "error");
+    return;
+  }
+  const hint = document.getElementById("customBgFileHint");
+  if (hint) hint.textContent = `Selected: ${file.name}`;
+
+  const reader = new FileReader();
+  reader.onload = function(event) {
+    const imageElement = document.getElementById('cropImage');
+    imageElement.src = event.target.result;
+    const ratioSelect = document.getElementById("cropAspectRatio");
+    if (ratioSelect) ratioSelect.value = "screen";
+    const modal = document.getElementById('cropModal');
+    modal.style.display = 'flex';
+    if (cropper) { cropper.destroy(); }
+    cropper = new Cropper(imageElement, {
+      aspectRatio: getCropAspectRatio("screen"),
+      viewMode: 1,
+      background: false,
+      autoCropArea: 1,
+      responsive: true,
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+function initCustomBackground() {
+  const input = document.getElementById("customBgInput");
+  if (!input) return;
+  bindCropModalInteractions();
+
+  /* ── Drag & Drop zone wiring ── */
+  const dropZone = document.getElementById("wallpaperDropZone");
+  if (dropZone) {
+    dropZone.addEventListener("click", (e) => {
+      if (e.target === input || e.target.closest("label")) return;
+      input.click();
+    });
+    dropZone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dropZone.classList.add("drag-over");
+    });
+    dropZone.addEventListener("dragleave", (e) => {
+      if (!dropZone.contains(e.relatedTarget)) {
+        dropZone.classList.remove("drag-over");
+      }
+    });
+    dropZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropZone.classList.remove("drag-over");
+      const file = e.dataTransfer?.files?.[0];
+      if (file) openImageInCropper(file);
+    });
+  }
+
+  input.addEventListener("change", function(e) {
+    const file = e.target.files[0];
+    if (file) openImageInCropper(file);
+  });
+}
+
+function closeCropModal() {
+  const modal = document.getElementById('cropModal');
+  modal.style.display = 'none';
+  if (cropper) {
+    cropper.destroy();
+    cropper = null;
+  }
+  const input = document.getElementById("customBgInput");
+  if (input) input.value = '';
+}
+
+function saveCroppedImage() {
+  if (!cropper) return;
+  const exportSize = getWallpaperExportSize();
+  
+  const canvas = cropper.getCroppedCanvas({
+    width: exportSize.width,
+    height: exportSize.height,
+    imageSmoothingEnabled: true,
+    imageSmoothingQuality: "high",
+  });
+  
+  if (!canvas) {
+    showToast("Failed to crop image", "error");
+    return;
+  }
+  
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+  
+  try {
+    localStorage.setItem(getCustomBackgroundKey(getActiveTheme()), dataUrl);
+    applyCustomBackground(dataUrl);
+    showToast("Custom wallpaper set!", "success");
+    closeCropModal();
+  } catch (err) {
+    showToast("Image too large to save! Try a smaller crop.", "error");
+  }
 }
 
 if (document.readyState === "loading") {
