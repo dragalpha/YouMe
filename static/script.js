@@ -5,6 +5,7 @@ let currentResolutions = [];
 let selectedResolution = "best";
 let isAudioOnly = false;
 let activePolls = {};            // task_id → interval
+let handledStreamTasks = {};     // task_id → true
 
 /* ─── Navigation ────────────────────────────────────────── */
 function showSection(name) {
@@ -316,6 +317,15 @@ function updateDownloadItem(taskId, task) {
   else if (task.status === "done") {
     statusEl.textContent = "✓ Done";
     barEl.classList.add("done");
+    if (task.stream_url && !handledStreamTasks[taskId]) {
+      handledStreamTasks[taskId] = true;
+      const a = document.createElement("a");
+      a.href = task.stream_url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.click();
+      showToast("Worker stream is ready. Opening download/stream URL...", "success");
+    }
     loadFiles();
   }
   else if (task.status === "error") {

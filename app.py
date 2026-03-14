@@ -13,6 +13,7 @@ from flask_login import LoginManager, UserMixin, current_user, login_user, logou
 from authlib.integrations.flask_client import OAuth
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+import requests
 import yt_dlp
 
 
@@ -70,6 +71,9 @@ limiter = Limiter(
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+YTDLP_WORKER_URL = os.getenv("YTDLP_WORKER_URL", "").rstrip("/")
+YTDLP_WORKER_SECRET = os.getenv("YTDLP_WORKER_SECRET", "")
+YTDLP_WORKER_TIMEOUT = float(os.getenv("YTDLP_WORKER_TIMEOUT", "45"))
 
 google_oauth = None
 if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
@@ -118,6 +122,65 @@ _resource_ffmpeg = os.path.join(RESOURCE_DIR, "ffmpeg.exe")
 _runtime_ffmpeg = os.path.join(RUNTIME_DIR, "ffmpeg.exe")
 FFMPEG_BINARY = _resource_ffmpeg if os.path.isfile(_resource_ffmpeg) else _runtime_ffmpeg
 FFMPEG_LOCATION = os.path.dirname(FFMPEG_BINARY) if os.path.isfile(FFMPEG_BINARY) else None
+
+
+def yt_worker_enabled():
+    return bool(YTDLP_WORKER_URL)
+
+
+def call_yt_worker(path, payload):
+    if not yt_worker_enabled():
+        return None, None
+
+    headers = {}
+    if YTDLP_WORKER_SECRET:
+        headers["X-Worker-Secret"] = YTDLP_WORKER_SECRET
+
+    try:
+        response = requests.post(
+            f"{YTDLP_WORKER_URL}{path}",
+            json=payload,
+            headers=headers,
+            timeout=YTDLP_WORKER_TIMEOUT,
+        )
+        body = response.json() if response.content else {}
+        return body, response.status_code
+    except requests.RequestException as e:
+        return {
+            "error": "yt-dlp worker is unreachable",
+            "details": str(e),
+        }, 502
+    except ValueError:
+        return {
+            "error": "yt-dlp worker returned invalid response",
+        }, 502
+
+
+def register_worker_result_task(worker_result):
+    task_id = str(uuid.uuid4())
+    stream_url = (worker_result or {}).get("stream_url", "")
+    title = (worker_result or {}).get("title", "")
+
+    if stream_url:
+        task = {
+            "status": "done",
+            "percent": 100,
+            "speed": "",
+            "filename": title,
+            "current_title": title,
+            "stream_url": stream_url,
+        }
+    else:
+        task = {
+            "status": "error",
+            "percent": 0,
+            "speed": "",
+            "error": (worker_result or {}).get("error", "Worker returned no stream URL"),
+        }
+
+    with download_tasks_lock:
+        download_tasks[task_id] = task
+    return task_id
 
 # Track download progress per task ID
 download_tasks = {}
@@ -377,6 +440,10 @@ def index():
 @limiter.limit("40/minute")
 def fetch_info():
     data = request.get_json(silent=True) or {}
+    if yt_worker_enabled():
+        body, status = call_yt_worker("/fetch_info", data)
+        return jsonify(body), status
+
     url = data.get("url", "").strip()
     if not url:
         return jsonify({"error": "No URL provided"}), 400
@@ -446,6 +513,10 @@ def fetch_info():
 @limiter.limit("30/minute")
 def music_search():
     data = request.get_json() or {}
+    if yt_worker_enabled():
+        body, status = call_yt_worker("/music_search", data)
+        return jsonify(body), status
+
     query = data.get("query", "").strip()
     limit = int(data.get("limit", 10) or 10)
     limit = max(1, min(limit, 25))
@@ -488,6 +559,10 @@ def music_search():
 @limiter.limit("40/minute")
 def video_info():
     data = request.get_json() or {}
+    if yt_worker_enabled():
+        body, status = call_yt_worker("/video_info", data)
+        return jsonify(body), status
+
     url = data.get("url", "").strip()
     if not url:
         return jsonify({"error": "No URL provided"}), 400
@@ -522,6 +597,10 @@ def video_info():
 @limiter.limit("30/minute")
 def music_stream_url():
     data = request.get_json() or {}
+    if yt_worker_enabled():
+        body, status = call_yt_worker("/music_stream_url", data)
+        return jsonify(body), status
+
     url = data.get("url", "").strip()
     if not url:
         return jsonify({"error": "No URL provided"}), 400
@@ -564,6 +643,12 @@ def music_stream_url():
 @limiter.limit("10/minute")
 def music_download():
     data = request.get_json() or {}
+    if yt_worker_enabled():
+        body, status = call_yt_worker("/music_download", data)
+        if status >= 400:
+            return jsonify(body), status
+        return jsonify({"task_id": register_worker_result_task(body)})
+
     url = data.get("url", "").strip()
     if not url:
         return jsonify({"error": "No URL provided"}), 400
@@ -693,6 +778,12 @@ def run_download(task_id, url, fmt_option, audio_only, playlist_items=None):
 @limiter.limit("10/minute")
 def start_download():
     data = request.get_json(silent=True) or {}
+    if yt_worker_enabled():
+        body, status = call_yt_worker("/download", data)
+        if status >= 400:
+            return jsonify(body), status
+        return jsonify({"task_id": register_worker_result_task(body)})
+
     url = data.get("url", "").strip()
     resolution = data.get("resolution", "best")
     audio_only = data.get("audio_only", False)
