@@ -174,7 +174,7 @@ body {
 [data-theme="hello-kitty"] body,
 [data-theme="hello-kitty"] .app-shell,
 [data-theme="hello-kitty"] .main-content {
-  cursor: url('themes/hello-kitty-cursor.svg') 4 2, auto;
+  cursor: url('themes/mickey-hand-cursor.svg') 6 2, auto;
 }
 [data-theme="hello-kitty"] button,
 [data-theme="hello-kitty"] .btn,
@@ -187,7 +187,7 @@ body {
 [data-theme="hello-kitty"] input[type="checkbox"],
 [data-theme="hello-kitty"] input[type="radio"],
 [data-theme="hello-kitty"] input[type="range"] {
-  cursor: url('themes/hello-kitty-pointer.svg') 6 2, pointer;
+  cursor: url('themes/mickey-hand-cursor.svg') 6 2, pointer;
 }
 [data-theme="spiderman"] .bg-layer { background-image: url('themes/spiderman-new-new.jpg'); background-size: cover; background-position: center 15%; background-repeat: no-repeat; }
 [data-theme="spiderman"] .bg-layer::before {
