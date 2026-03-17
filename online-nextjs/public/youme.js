@@ -36,12 +36,12 @@ function shouldEnableBatmanScrollVideo() {
 
 function batmanScrollTargetTime(duration) {
   const scrollY = window.scrollY || window.pageYOffset || 0;
-  const loopPixels = Math.max(window.innerHeight * 2.8, 2200);
+  const loopPixels = Math.max(window.innerHeight * 1.8, 1400);
   const wrappedScroll = ((scrollY % loopPixels) + loopPixels) % loopPixels;
   const scrollTime = (wrappedScroll / loopPixels) * duration;
 
   // Keep subtle motion even while idle so the wallpaper feels alive.
-  const driftTime = ((performance.now() / 1000) * 0.06) % duration;
+  const driftTime = ((performance.now() / 1000) * 0.12) % duration;
   return (scrollTime + driftTime) % duration;
 }
 
@@ -73,7 +73,7 @@ function runBatmanScrollLoop() {
     delta += delta > 0 ? -duration : duration;
   }
 
-  let next = current + delta * 0.1;
+  let next = current + delta * 0.16;
   if (next < 0) next += duration;
   if (next >= duration) next -= duration;
 

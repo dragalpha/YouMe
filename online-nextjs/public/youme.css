@@ -148,7 +148,7 @@ body {
   opacity: 0.62;
 }
 
-[data-theme="batman"] .bg-layer { background-image: url('themes/batman-new.jpg'); background-size: cover; background-position: center; }
+[data-theme="batman"] .bg-layer { background-image: none; background-size: cover; background-position: center; }
 [data-theme="hello-kitty"] .bg-layer { background-image: url('themes/hello-kitty-new.png'); background-size: cover; }
 [data-theme="spiderman"] .bg-layer { background-image: url('themes/spiderman-new-new.jpg'); background-size: cover; background-position: center 15%; background-repeat: no-repeat; }
 [data-theme="spiderman"] .bg-layer::before {
