@@ -15,6 +15,125 @@ let currentVisibleSection = null;
 const SECTION_ORDER = ["focus", "library", "watchlist", "planner", "admin", "settings"];
 let adminLoadedOnce = false;
 
+const batmanVideoState = {
+  videoEl: null,
+  ready: false,
+  enabled: false,
+  rafId: null,
+};
+
+function hasCustomBackgroundForTheme(themeName) {
+  try {
+    return !!localStorage.getItem(getCustomBackgroundKey(themeName));
+  } catch (_) {
+    return false;
+  }
+}
+
+function shouldEnableBatmanScrollVideo() {
+  return getActiveTheme() === "batman" && !hasCustomBackgroundForTheme("batman");
+}
+
+function batmanScrollTargetTime(duration) {
+  const scrollY = window.scrollY || window.pageYOffset || 0;
+  const loopPixels = Math.max(window.innerHeight * 2.8, 2200);
+  const wrappedScroll = ((scrollY % loopPixels) + loopPixels) % loopPixels;
+  const scrollTime = (wrappedScroll / loopPixels) * duration;
+
+  // Keep subtle motion even while idle so the wallpaper feels alive.
+  const driftTime = ((performance.now() / 1000) * 0.06) % duration;
+  return (scrollTime + driftTime) % duration;
+}
+
+function stopBatmanScrollLoop() {
+  if (batmanVideoState.rafId) {
+    cancelAnimationFrame(batmanVideoState.rafId);
+    batmanVideoState.rafId = null;
+  }
+}
+
+function runBatmanScrollLoop() {
+  if (!batmanVideoState.enabled || !batmanVideoState.ready || !batmanVideoState.videoEl) {
+    stopBatmanScrollLoop();
+    return;
+  }
+
+  const video = batmanVideoState.videoEl;
+  const duration = Number(video.duration) || 0;
+  if (!duration) {
+    stopBatmanScrollLoop();
+    return;
+  }
+
+  const target = batmanScrollTargetTime(duration);
+  const current = Number(video.currentTime) || 0;
+  let delta = target - current;
+
+  if (Math.abs(delta) > duration / 2) {
+    delta += delta > 0 ? -duration : duration;
+  }
+
+  let next = current + delta * 0.1;
+  if (next < 0) next += duration;
+  if (next >= duration) next -= duration;
+
+  try {
+    video.currentTime = next;
+  } catch (_) {}
+
+  batmanVideoState.rafId = requestAnimationFrame(runBatmanScrollLoop);
+}
+
+function syncBatmanScrollVideoState() {
+  const root = document.documentElement;
+  const enabled = shouldEnableBatmanScrollVideo();
+  batmanVideoState.enabled = enabled;
+  root.classList.toggle("batman-video-active", enabled);
+
+  if (!enabled) {
+    stopBatmanScrollLoop();
+    return;
+  }
+
+  if (batmanVideoState.ready) {
+    stopBatmanScrollLoop();
+    batmanVideoState.rafId = requestAnimationFrame(runBatmanScrollLoop);
+  }
+}
+
+function initBatmanScrollVideo() {
+  const video = document.getElementById("batmanScrollVideo");
+  if (!video || batmanVideoState.videoEl) return;
+
+  batmanVideoState.videoEl = video;
+  video.muted = true;
+  video.defaultMuted = true;
+  video.playsInline = true;
+
+  const markReady = () => {
+    batmanVideoState.ready = Number(video.duration) > 0;
+    syncBatmanScrollVideoState();
+  };
+
+  video.addEventListener("loadedmetadata", markReady);
+  video.addEventListener("canplay", markReady);
+  video.addEventListener("error", () => {
+    batmanVideoState.ready = false;
+    syncBatmanScrollVideoState();
+  });
+
+  if (video.readyState >= 1) {
+    markReady();
+  }
+
+  // Ensure playback is permitted on stricter browsers while we still drive time manually.
+  video.play().then(() => {
+    video.pause();
+  }).catch(() => {
+    // Safe to ignore: the static Batman wallpaper remains as fallback.
+  });
+}
+
 function setActiveNav(name) {
   document.querySelectorAll(".nav-item").forEach(b => {
     b.classList.toggle("active", b.dataset.section === name);
@@ -1665,6 +1784,7 @@ function bindUrlEnter() {
 }
 
 function initApp() {
+  initBatmanScrollVideo();
   loadSavedTheme();
   initFocusMode();
   initNotepad();
@@ -2196,6 +2316,7 @@ function loadCustomBackground() {
       const hint = document.getElementById("customBgFileHint");
       if (hint) hint.textContent = "No custom image selected.";
     }
+    syncBatmanScrollVideoState();
   } catch (_) {}
 }
 
@@ -2206,6 +2327,7 @@ function applyCustomBackground(dataUrl) {
     bgLayer.style.backgroundPosition = "center";
     bgLayer.style.backgroundSize = "cover";
   }
+  syncBatmanScrollVideoState();
 }
 
 function clearCustomBackground() {
@@ -2222,6 +2344,7 @@ function clearCustomBackground() {
   if (input) input.value = "";
   const hint = document.getElementById("customBgFileHint");
   if (hint) hint.textContent = "No custom image selected.";
+  syncBatmanScrollVideoState();
   showToast("Custom wallpaper cleared", "success");
 }
 
