@@ -22,6 +22,18 @@ const batmanVideoState = {
   rafId: null,
 };
 
+const helloKitty3dState = {
+  enabled: false,
+  rafId: null,
+  targetX: 0,
+  targetY: 0,
+  currentX: 0,
+  currentY: 0,
+  boundMouseMove: null,
+  boundMouseLeave: null,
+  boundScroll: null,
+};
+
 function hasCustomBackgroundForTheme(themeName) {
   try {
     return !!localStorage.getItem(getCustomBackgroundKey(themeName));
@@ -132,6 +144,119 @@ function initBatmanScrollVideo() {
   }).catch(() => {
     // Safe to ignore: the static Batman wallpaper remains as fallback.
   });
+}
+
+function shouldEnableHelloKitty3d() {
+  return getActiveTheme() === "hello-kitty" && !hasCustomBackgroundForTheme("hello-kitty");
+}
+
+function stopHelloKitty3dLoop() {
+  if (helloKitty3dState.rafId) {
+    cancelAnimationFrame(helloKitty3dState.rafId);
+    helloKitty3dState.rafId = null;
+  }
+}
+
+function updateHelloKitty3dTargetsFromScroll() {
+  const scrollY = window.scrollY || window.pageYOffset || 0;
+  const sway = Math.sin(scrollY / 220) * 1.4;
+  const pitch = Math.cos(scrollY / 340) * 1.1;
+  helloKitty3dState.targetX = Math.max(-3.5, Math.min(3.5, helloKitty3dState.targetX + pitch * 0.18));
+  helloKitty3dState.targetY = Math.max(-4.5, Math.min(4.5, helloKitty3dState.targetY + sway * 0.2));
+}
+
+function runHelloKitty3dLoop() {
+  if (!helloKitty3dState.enabled) {
+    stopHelloKitty3dLoop();
+    return;
+  }
+
+  helloKitty3dState.currentX += (helloKitty3dState.targetX - helloKitty3dState.currentX) * 0.12;
+  helloKitty3dState.currentY += (helloKitty3dState.targetY - helloKitty3dState.currentY) * 0.12;
+
+  const rotX = helloKitty3dState.currentX.toFixed(3);
+  const rotY = helloKitty3dState.currentY.toFixed(3);
+  const shiftX = (helloKitty3dState.currentY * -1.8).toFixed(2);
+  const shiftY = (helloKitty3dState.currentX * -1.4).toFixed(2);
+  const intensity = Math.max(Math.abs(helloKitty3dState.currentX), Math.abs(helloKitty3dState.currentY));
+  const scale = (1.04 + intensity * 0.0035).toFixed(4);
+
+  document.documentElement.style.setProperty("--kitty-rot-x", `${rotX}deg`);
+  document.documentElement.style.setProperty("--kitty-rot-y", `${rotY}deg`);
+  document.documentElement.style.setProperty("--kitty-shift-x", `${shiftX}px`);
+  document.documentElement.style.setProperty("--kitty-shift-y", `${shiftY}px`);
+  document.documentElement.style.setProperty("--kitty-scale", scale);
+
+  helloKitty3dState.rafId = requestAnimationFrame(runHelloKitty3dLoop);
+}
+
+function bindHelloKitty3dEvents() {
+  if (!helloKitty3dState.boundMouseMove) {
+    helloKitty3dState.boundMouseMove = (e) => {
+      const xNorm = (e.clientY / Math.max(window.innerHeight, 1)) - 0.5;
+      const yNorm = (e.clientX / Math.max(window.innerWidth, 1)) - 0.5;
+      helloKitty3dState.targetX = Math.max(-4, Math.min(4, xNorm * 5.4));
+      helloKitty3dState.targetY = Math.max(-5.5, Math.min(5.5, yNorm * -6.6));
+    };
+  }
+  if (!helloKitty3dState.boundMouseLeave) {
+    helloKitty3dState.boundMouseLeave = () => {
+      helloKitty3dState.targetX *= 0.45;
+      helloKitty3dState.targetY *= 0.45;
+    };
+  }
+  if (!helloKitty3dState.boundScroll) {
+    helloKitty3dState.boundScroll = () => {
+      updateHelloKitty3dTargetsFromScroll();
+    };
+  }
+
+  window.addEventListener("mousemove", helloKitty3dState.boundMouseMove, { passive: true });
+  window.addEventListener("mouseleave", helloKitty3dState.boundMouseLeave);
+  window.addEventListener("scroll", helloKitty3dState.boundScroll, { passive: true });
+}
+
+function unbindHelloKitty3dEvents() {
+  if (helloKitty3dState.boundMouseMove) {
+    window.removeEventListener("mousemove", helloKitty3dState.boundMouseMove);
+  }
+  if (helloKitty3dState.boundMouseLeave) {
+    window.removeEventListener("mouseleave", helloKitty3dState.boundMouseLeave);
+  }
+  if (helloKitty3dState.boundScroll) {
+    window.removeEventListener("scroll", helloKitty3dState.boundScroll);
+  }
+}
+
+function syncHelloKitty3dState() {
+  const root = document.documentElement;
+  const enabled = shouldEnableHelloKitty3d();
+  helloKitty3dState.enabled = enabled;
+  root.classList.toggle("hello-kitty-3d-active", enabled);
+
+  if (enabled) {
+    bindHelloKitty3dEvents();
+    if (!helloKitty3dState.rafId) {
+      helloKitty3dState.rafId = requestAnimationFrame(runHelloKitty3dLoop);
+    }
+  } else {
+    unbindHelloKitty3dEvents();
+    stopHelloKitty3dLoop();
+    helloKitty3dState.targetX = 0;
+    helloKitty3dState.targetY = 0;
+    helloKitty3dState.currentX = 0;
+    helloKitty3dState.currentY = 0;
+    root.style.setProperty("--kitty-rot-x", "0deg");
+    root.style.setProperty("--kitty-rot-y", "0deg");
+    root.style.setProperty("--kitty-shift-x", "0px");
+    root.style.setProperty("--kitty-shift-y", "0px");
+    root.style.setProperty("--kitty-scale", "1.04");
+  }
+}
+
+function syncThemeBackgroundEffects() {
+  syncBatmanScrollVideoState();
+  syncHelloKitty3dState();
 }
 
 function setActiveNav(name) {
@@ -301,6 +426,7 @@ function setTheme(name) {
 
   // Re-apply wallpaper for the selected theme so each theme can keep its own default/custom image.
   loadCustomBackground();
+  syncThemeBackgroundEffects();
 }
 
 function loadSavedTheme() {
@@ -1785,6 +1911,7 @@ function bindUrlEnter() {
 
 function initApp() {
   initBatmanScrollVideo();
+  syncHelloKitty3dState();
   loadSavedTheme();
   initFocusMode();
   initNotepad();
@@ -2316,7 +2443,7 @@ function loadCustomBackground() {
       const hint = document.getElementById("customBgFileHint");
       if (hint) hint.textContent = "No custom image selected.";
     }
-    syncBatmanScrollVideoState();
+    syncThemeBackgroundEffects();
   } catch (_) {}
 }
 
@@ -2327,7 +2454,7 @@ function applyCustomBackground(dataUrl) {
     bgLayer.style.backgroundPosition = "center";
     bgLayer.style.backgroundSize = "cover";
   }
-  syncBatmanScrollVideoState();
+  syncThemeBackgroundEffects();
 }
 
 function clearCustomBackground() {
@@ -2344,7 +2471,7 @@ function clearCustomBackground() {
   if (input) input.value = "";
   const hint = document.getElementById("customBgFileHint");
   if (hint) hint.textContent = "No custom image selected.";
-  syncBatmanScrollVideoState();
+  syncThemeBackgroundEffects();
   showToast("Custom wallpaper cleared", "success");
 }
 

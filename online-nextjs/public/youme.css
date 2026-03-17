@@ -149,7 +149,27 @@ body {
 }
 
 [data-theme="batman"] .bg-layer { background-image: none; background-size: cover; background-position: center; }
-[data-theme="hello-kitty"] .bg-layer { background-image: url('themes/hello-kitty-new.png'); background-size: cover; }
+[data-theme="hello-kitty"] .bg-layer {
+  background-image: url('themes/hello-kitty-new.png');
+  background-size: cover;
+  background-position: center;
+  transform: perspective(1300px) rotateX(var(--kitty-rot-x, 0deg)) rotateY(var(--kitty-rot-y, 0deg)) scale(var(--kitty-scale, 1.04));
+  transform-origin: center;
+  transition: transform 0.12s linear;
+  will-change: transform;
+}
+[data-theme="hello-kitty"].hello-kitty-3d-active .bg-layer::before {
+  content: '';
+  position: absolute;
+  inset: -6%;
+  background:
+    radial-gradient(circle at 22% 24%, rgba(255,255,255,0.28), transparent 36%),
+    radial-gradient(circle at 80% 72%, rgba(255,192,203,0.26), transparent 42%);
+  mix-blend-mode: screen;
+  opacity: 0.5;
+  transform: translate3d(var(--kitty-shift-x, 0px), var(--kitty-shift-y, 0px), 0) scale(1.03);
+  transition: transform 0.14s linear;
+}
 [data-theme="spiderman"] .bg-layer { background-image: url('themes/spiderman-new-new.jpg'); background-size: cover; background-position: center 15%; background-repeat: no-repeat; }
 [data-theme="spiderman"] .bg-layer::before {
   content: '';
