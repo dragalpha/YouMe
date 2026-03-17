@@ -744,7 +744,103 @@ function setLocalNowPlaying(text) {
   }
 }
 
-function setLocalLofiFile(file) {
+const LOFI_DB_NAME = "youme-local-lofi";
+const LOFI_STORE = "files";
+const LOFI_FILE_KEY = "active-lofi";
+
+function openLofiDb() {
+  return new Promise((resolve, reject) => {
+    if (!("indexedDB" in window)) {
+      reject(new Error("IndexedDB not supported"));
+      return;
+    }
+
+    const req = indexedDB.open(LOFI_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(LOFI_STORE)) {
+        db.createObjectStore(LOFI_STORE, { keyPath: "id" });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error("Failed to open IndexedDB"));
+  });
+}
+
+async function saveLofiToIndexedDb(file) {
+  const db = await openLofiDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(LOFI_STORE, "readwrite");
+    const store = tx.objectStore(LOFI_STORE);
+    store.put({
+      id: LOFI_FILE_KEY,
+      blob: file,
+      name: file.name || "lofi-audio",
+      type: file.type || "audio/mpeg",
+      updatedAt: Date.now(),
+    });
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error || new Error("Failed saving lofi file"));
+    };
+  });
+}
+
+async function getLofiFromIndexedDb() {
+  const db = await openLofiDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(LOFI_STORE, "readonly");
+    const store = tx.objectStore(LOFI_STORE);
+    const req = store.get(LOFI_FILE_KEY);
+    req.onsuccess = () => {
+      db.close();
+      resolve(req.result || null);
+    };
+    req.onerror = () => {
+      db.close();
+      reject(req.error || new Error("Failed loading lofi file"));
+    };
+  });
+}
+
+async function clearLofiFromIndexedDb() {
+  const db = await openLofiDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(LOFI_STORE, "readwrite");
+    const store = tx.objectStore(LOFI_STORE);
+    store.delete(LOFI_FILE_KEY);
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error || new Error("Failed deleting lofi file"));
+    };
+  });
+}
+
+async function restoreLocalLofiFromDb() {
+  try {
+    const record = await getLofiFromIndexedDb();
+    if (!record || !record.blob) return;
+
+    const file = new File([record.blob], record.name || "lofi-audio", {
+      type: record.type || record.blob.type || "audio/mpeg",
+      lastModified: record.updatedAt || Date.now(),
+    });
+    setLocalLofiFile(file, false);
+    setLocalNowPlaying(`Saved: ${record.name}`);
+  } catch (_) {
+    // ignore restore failures silently
+  }
+}
+
+function setLocalLofiFile(file, shouldPersist = true) {
   const els = focusEls();
   if (!els.localLofiAudio) return;
 
@@ -765,6 +861,12 @@ function setLocalLofiFile(file) {
   setLocalNowPlaying(`Selected: ${file.name}`);
   if (els.lofiPlayBtn) {
     els.lofiPlayBtn.textContent = "Play";
+  }
+
+  if (shouldPersist) {
+    saveLofiToIndexedDb(file).catch(() => {
+      showToast("Could not save lofi locally", "error");
+    });
   }
 }
 
@@ -801,6 +903,9 @@ function clearLocalLofi() {
   els.localLofiAudio.load();
   if (els.lofiFileInput) els.lofiFileInput.value = "";
   setLocalNowPlaying("No file selected.");
+  clearLofiFromIndexedDb().catch(() => {
+    showToast("Could not clear saved lofi", "error");
+  });
 }
 
 const RING_CIRCUMFERENCE = 527.8; // 2π × r=84
@@ -1512,6 +1617,7 @@ function initFocusMode() {
   loadFocusSessions();
   startTimerLoop();
   bindFocusEvents();
+  restoreLocalLofiFromDb();
   updateFocusUI();
 }
 
