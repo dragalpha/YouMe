@@ -170,25 +170,7 @@ body {
   transform: translate3d(var(--kitty-shift-x, 0px), var(--kitty-shift-y, 0px), 0) scale(1.03);
   transition: transform 0.14s linear;
 }
-[data-theme="hello-kitty"],
-[data-theme="hello-kitty"] body,
-[data-theme="hello-kitty"] .app-shell,
-[data-theme="hello-kitty"] .main-content {
-  cursor: url('themes/mickey-hand-cursor.svg') 6 2, auto;
-}
-[data-theme="hello-kitty"] button,
-[data-theme="hello-kitty"] .btn,
-[data-theme="hello-kitty"] .nav-item,
-[data-theme="hello-kitty"] .mob-tab,
-[data-theme="hello-kitty"] .theme-opt,
-[data-theme="hello-kitty"] .shortcut-chip,
-[data-theme="hello-kitty"] a,
-[data-theme="hello-kitty"] [role="button"],
-[data-theme="hello-kitty"] input[type="checkbox"],
-[data-theme="hello-kitty"] input[type="radio"],
-[data-theme="hello-kitty"] input[type="range"] {
-  cursor: url('themes/mickey-hand-cursor.svg') 6 2, pointer;
-}
+
 [data-theme="spiderman"] .bg-layer { background-image: url('themes/spiderman-new-new.jpg'); background-size: cover; background-position: center 15%; background-repeat: no-repeat; }
 [data-theme="spiderman"] .bg-layer::before {
   content: '';

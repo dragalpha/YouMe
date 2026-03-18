@@ -22,6 +22,117 @@ const batmanVideoState = {
   rafId: null,
 };
 
+const helloKittyCursorState = {
+  enabled: false,
+  container: null,
+  dots: [],
+  mouse: { x: typeof window !== 'undefined' ? window.innerWidth / 2 : 0, y: typeof window !== 'undefined' ? window.innerHeight / 2 : 0 },
+  boundMouseMove: null,
+  gsapTicker: null,
+};
+
+function initHelloKittyCursor() {
+  if (helloKittyCursorState.container) return;
+  const container = document.createElement('div');
+  container.className = 'hk-cursor-trail';
+  container.style.position = 'fixed';
+  container.style.inset = '0';
+  container.style.pointerEvents = 'none';
+  container.style.zIndex = '9999';
+  
+  for (let i = 0; i < 15; i++) {
+    const dot = document.createElement('div');
+    const size = 18 - (i * 0.8);
+    const opacity = 1 - (i * 0.05);
+    dot.style.position = 'absolute';
+    dot.style.width = `${size}px`;
+    dot.style.height = `${size}px`;
+    dot.style.background = i === 0 ? '#ff1493' : '#ff69b4';
+    dot.style.borderRadius = '50%';
+    dot.style.opacity = opacity;
+    dot.style.left = '0';
+    dot.style.top = '0';
+    dot.style.display = 'none';
+    dot.style.boxShadow = '0 0 8px rgba(255,105,180,0.6)';
+    container.appendChild(dot);
+    helloKittyCursorState.dots.push({ el: dot, x: helloKittyCursorState.mouse.x, y: helloKittyCursorState.mouse.y });
+  }
+  
+  document.body.appendChild(container);
+  helloKittyCursorState.container = container;
+  
+  helloKittyCursorState.boundMouseMove = (e) => {
+    helloKittyCursorState.mouse.x = e.clientX;
+    helloKittyCursorState.mouse.y = e.clientY;
+    if (helloKittyCursorState.dots.some(d => d.el.style.display === 'none')) {
+      helloKittyCursorState.dots.forEach(d => {
+        d.x = e.clientX; 
+        d.y = e.clientY;
+        d.el.style.display = 'block';
+      });
+    }
+  };
+  
+  helloKittyCursorState.gsapTicker = () => {
+    if (!helloKittyCursorState.enabled) return;
+    
+    const head = helloKittyCursorState.dots[0];
+    head.x += (helloKittyCursorState.mouse.x - head.x) * 0.45;
+    head.y += (helloKittyCursorState.mouse.y - head.y) * 0.45;
+    
+    for (let i = 1; i < helloKittyCursorState.dots.length; i++) {
+      const p = helloKittyCursorState.dots[i - 1];
+      const d = helloKittyCursorState.dots[i];
+      d.x += (p.x - d.x) * 0.5;
+      d.y += (p.y - d.y) * 0.5;
+    }
+    
+    if (window.gsap) {
+      helloKittyCursorState.dots.forEach(d => {
+        gsap.set(d.el, { x: d.x - d.el.offsetWidth/2, y: d.y - d.el.offsetHeight/2 });
+      });
+    } else {
+      helloKittyCursorState.dots.forEach(d => {
+        d.el.style.transform = `translate(${d.x - d.el.offsetWidth/2}px, ${d.y - d.el.offsetHeight/2}px)`;
+      });
+    }
+  };
+}
+
+function syncHelloKittyCursorState() {
+  let activeTheme = "";
+  try {
+     activeTheme = getActiveTheme(); 
+  } catch (err) {
+     activeTheme = document.documentElement.getAttribute("data-theme");
+  }
+  const enabled = activeTheme === "hello-kitty";
+  helloKittyCursorState.enabled = enabled;
+  
+  if (enabled) {
+    if (!helloKittyCursorState.container) initHelloKittyCursor();
+    helloKittyCursorState.container.style.display = 'block';
+    window.addEventListener('mousemove', helloKittyCursorState.boundMouseMove, { passive: true });
+    if (window.gsap) {
+      gsap.ticker.add(helloKittyCursorState.gsapTicker);
+    } else {
+       // fallback if gsap missing
+       const fallbackLoop = () => {
+          if (!helloKittyCursorState.enabled) return;
+          helloKittyCursorState.gsapTicker();
+          requestAnimationFrame(fallbackLoop);
+       };
+       requestAnimationFrame(fallbackLoop);
+    }
+  } else {
+    if (helloKittyCursorState.container) {
+      helloKittyCursorState.container.style.display = 'none';
+      window.removeEventListener('mousemove', helloKittyCursorState.boundMouseMove);
+      if (window.gsap) gsap.ticker.remove(helloKittyCursorState.gsapTicker);
+    }
+  }
+}
+
 const helloKitty3dState = {
   enabled: false,
   rafId: null,
@@ -257,6 +368,7 @@ function syncHelloKitty3dState() {
 function syncThemeBackgroundEffects() {
   syncBatmanScrollVideoState();
   syncHelloKitty3dState();
+  syncHelloKittyCursorState();
 }
 
 function setActiveNav(name) {
