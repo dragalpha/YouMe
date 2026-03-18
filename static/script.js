@@ -81,36 +81,41 @@ function scrollSectionAnchorIntoView(anchor) {
     const topbarHeight = isTopbarVisible ? topbar.getBoundingClientRect().height : 0;
     
     // Calculate desired gap - ensure at least 120px of space on mobile
-    const gap = window.innerWidth <= 768 ? Math.max(120, topbarHeight + 60) : 20;
+    const isMobile = window.innerWidth <= 768;
+    const gap = isMobile ? Math.max(120, topbarHeight + 60) : 20;
     const desiredOffset = topbarHeight + gap;
 
-    // Get the element's current position
+    // Get the element's absolute position on the page
     const rect = anchor.getBoundingClientRect();
-    const scrollNeeded = rect.top - desiredOffset;
+    const elementAbsoluteTop = window.scrollY + rect.top;
+    const targetScrollY = elementAbsoluteTop - desiredOffset;
     
-    console.log(`[SCROLL DEBUG] topbarHeight=${topbarHeight}, gap=${gap}, desiredOffset=${desiredOffset}, rect.top=${rect.top}, scrollNeeded=${scrollNeeded}, viewport width=${window.innerWidth}`);
+    console.log(`[SCROLL] isMobile=${isMobile}, topbarHeight=${topbarHeight}, gap=${gap}, elementAbsoluteTop=${elementAbsoluteTop}, targetScrollY=${targetScrollY}, currentScrollY=${window.scrollY}`);
     
-    // Perform the scroll
-    if (Math.abs(scrollNeeded) > 1) {
-      console.log(`[SCROLL] Scrolling by ${scrollNeeded}px`);
-      window.scrollBy({
-        top: scrollNeeded,
-        behavior: "smooth"
+    // Use scrollTo with absolute Y position
+    if (Math.abs(window.scrollY - targetScrollY) > 2) {
+      console.log(`[SCROLL] Scrolling TO ${targetScrollY}px (currently at ${window.scrollY}px)`);
+      window.scrollTo({
+        top: Math.max(0, targetScrollY),
+        behavior: "smooth",
+        left: 0
       });
     } else {
-      console.log(`[SCROLL] No scroll needed (delta < 1px)`);
+      console.log(`[SCROLL] Already at correct position`);
     }
     
-    // Correction pass after smooth scroll completes (after ~500ms)
+    // Correction pass after smooth scroll completes
     setTimeout(() => {
-      const newRect = anchor.getBoundingClientRect();
-      const correctionNeeded = newRect.top - desiredOffset;
-      console.log(`[SCROLL CORRECTION] newRect.top=${newRect.top}, correctionNeeded=${correctionNeeded}`);
-      if (Math.abs(correctionNeeded) > 3) {
-        console.log(`[SCROLL CORRECTION] Applying correction of ${correctionNeeded}px`);
-        window.scrollBy({
-          top: correctionNeeded,
-          behavior: "auto"
+      const newAbsoluteTop = window.scrollY + anchor.getBoundingClientRect().top;
+      const newTargetY = newAbsoluteTop - desiredOffset;
+      const correction = Math.abs(window.scrollY - newTargetY);
+      console.log(`[SCROLL CORRECTION] Current==${window.scrollY}, Target==${newTargetY}, Correction==${correction}px`);
+      if (correction > 3) {
+        console.log(`[SCROLL CORRECTION] Applying correction to ${newTargetY}px`);
+        window.scrollTo({
+          top: Math.max(0, newTargetY),
+          behavior: "auto",
+          left: 0
         });
       }
     }, 500);
