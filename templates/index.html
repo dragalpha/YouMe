@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>YouMe</title>
-  <link rel="stylesheet" href="/static/style.css?v=20260314c" />
+  <link rel="stylesheet" href="/static/style.css?v=20260315f" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=Montserrat:wght@400;500;600;700&family=Nunito:wght@400;600;700;800&family=Barlow+Condensed:wght@400;600;700&family=Orbitron:wght@400;600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" />
@@ -44,6 +44,9 @@
         <button class="nav-item" data-section="planner" onclick="showSection('planner')">
           <span class="nav-label">Planner</span>
         </button>
+        <button class="nav-item" data-section="admin" onclick="showSection('admin')">
+          <span class="nav-label">Admin</span>
+        </button>
         <button class="nav-item" data-section="settings" onclick="showSection('settings')">
           <span class="nav-label">Settings</span>
         </button>
@@ -68,6 +71,9 @@
         </button>
         <button class="mob-tab" data-section="planner" onclick="showSection('planner')">
           <span>Plan</span>
+        </button>
+        <button class="mob-tab" data-section="admin" onclick="showSection('admin')">
+          <span>Admin</span>
         </button>
         <button class="mob-tab" data-section="settings" onclick="showSection('settings')">
           <span>Settings</span>
@@ -344,6 +350,63 @@
         </div>
       </section>
 
+      <!-- ═══════════ ADMIN SECTION ═══════════ -->
+      <section id="sec-admin" class="app-section">
+        <div class="sec-header anim-stagger-1">
+          <div>
+            <h1 class="sec-title">Admin Panel</h1>
+            <p class="sec-sub">Profile info, basic account controls, and upcoming badges</p>
+          </div>
+        </div>
+
+        <div class="admin-layout">
+          <div class="card admin-profile-card anim-stagger-2">
+            <div class="admin-profile-head">
+              <div class="admin-avatar" id="adminAvatar">YM</div>
+              <div>
+                <h3 class="card-title" id="adminName">Loading...</h3>
+                <p class="card-sub" id="adminEmail">-</p>
+              </div>
+            </div>
+            <div class="admin-meta-grid">
+              <div class="admin-meta-item">
+                <span class="admin-meta-k">Account Tier</span>
+                <span class="admin-meta-v" id="adminTier">Free</span>
+              </div>
+              <div class="admin-meta-item">
+                <span class="admin-meta-k">Member Since</span>
+                <span class="admin-meta-v" id="adminMemberSince">-</span>
+              </div>
+              <div class="admin-meta-item">
+                <span class="admin-meta-k">User ID</span>
+                <span class="admin-meta-v" id="adminUserId">-</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card admin-basics-card anim-stagger-3">
+            <h3 class="card-title">Website Basics</h3>
+            <p class="card-sub">Common controls every app panel has (profile + usage overview).</p>
+            <div class="admin-stat-grid" id="adminStatGrid">
+              <div class="admin-stat-pill"><span class="admin-stat-n" id="adminDownloads">0</span><span class="admin-stat-l">Downloads</span></div>
+              <div class="admin-stat-pill"><span class="admin-stat-n" id="adminHabits">0</span><span class="admin-stat-l">Habits</span></div>
+              <div class="admin-stat-pill"><span class="admin-stat-n" id="adminCurrentStreak">0</span><span class="admin-stat-l">Current Streak</span></div>
+              <div class="admin-stat-pill"><span class="admin-stat-n" id="adminBestStreak">0</span><span class="admin-stat-l">Best Streak</span></div>
+            </div>
+          </div>
+
+          <div class="card admin-badges-card anim-stagger-4">
+            <div class="admin-badges-head">
+              <h3 class="card-title">Badges</h3>
+              <span class="admin-coming">Coming Soon</span>
+            </div>
+            <div class="admin-badge-grid" id="adminBadgeGrid">
+              <div class="admin-badge">Loading badges...</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- ═══════════ SETTINGS SECTION ═══════════ -->
       <section id="sec-settings" class="app-section">
         <div class="sec-header anim-stagger-1">
@@ -446,7 +509,12 @@
     </div>
   </div>
 
+  <div class="cursor-dot" aria-hidden="true"></div>
+  <div class="cursor" aria-hidden="true"></div>
+  <div class="particles" aria-hidden="true"></div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
-  <script src="/static/script.js?v=20260315a"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="/static/script.js?v=20260315c"></script>
 </body>
 </html>

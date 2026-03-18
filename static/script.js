@@ -9,41 +9,161 @@ let browserExtractorClient = null;
 let browserExtractorPromise = null;
 let trackSeekDragging = false;
 let currentTrackMeta = { title: "", sourceUrl: "" };
+let libraryLoadedOnce = false;
+let currentVisibleSection = null;
 
-/* ─── Navigation ────────────────────────────────────────── */
-function showSection(name) {
-  // Update main sections
-  document.querySelectorAll(".app-section").forEach(s => {
-    s.classList.remove("active");
-    // Force reflow to re-trigger staggered children animations
-    void s.offsetWidth; 
-  });
-  
-  const sec = document.getElementById(`sec-${name}`);
-  if (sec) {
-    sec.classList.add("active");
-  }
+const SECTION_ORDER = ["focus", "downloader", "library", "watchlist", "planner", "admin", "settings"];
+let adminLoadedOnce = false;
 
-  // Reset scroll position so short sections (like Settings) are visible immediately.
-  const main = document.querySelector(".main-content");
-  if (main && typeof main.scrollTo === "function") {
-    main.scrollTo({ top: 0, behavior: "auto" });
-  }
-  if (typeof window.scrollTo === "function") {
-    window.scrollTo({ top: 0, behavior: "auto" });
-  }
-
-  // Update sidebar nav items
+function setActiveNav(name) {
   document.querySelectorAll(".nav-item").forEach(b => {
     b.classList.toggle("active", b.dataset.section === name);
   });
-  // Update mobile tabs
   document.querySelectorAll(".mob-tab").forEach(b => {
     b.classList.toggle("active", b.dataset.section === name);
   });
+}
 
-  // Lazy-load library when navigating to it
-  if (name === "library") loadFiles();
+function maybeLoadSectionData(name) {
+  if (name === "library" && !libraryLoadedOnce) {
+    libraryLoadedOnce = true;
+    loadFiles();
+  }
+  if (name === "admin" && !adminLoadedOnce) {
+    adminLoadedOnce = true;
+    loadAdminPanel();
+  }
+}
+
+function initSectionScrollTracking() {
+  const main = document.querySelector(".main-content");
+  if (!main || typeof IntersectionObserver === "undefined") return;
+
+  const sectionElements = SECTION_ORDER
+    .map(name => document.getElementById(`sec-${name}`))
+    .filter(Boolean);
+
+  const observer = new IntersectionObserver(entries => {
+    // Pick the most visible currently intersecting section.
+    const visible = entries
+      .filter(e => e.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+    if (!visible.length) return;
+
+    const id = visible[0].target.id || "";
+    const name = id.replace(/^sec-/, "");
+    if (!name) return;
+
+    // Avoid re-running updates while staying on the same visible section.
+    if (name === currentVisibleSection) return;
+    currentVisibleSection = name;
+
+    setActiveNav(name);
+    maybeLoadSectionData(name);
+  }, {
+    root: null,
+    threshold: [0.2, 0.45, 0.7],
+  });
+
+  sectionElements.forEach(sec => observer.observe(sec));
+}
+
+/* ─── Navigation ────────────────────────────────────────── */
+function showSection(name) {
+  const sec = document.getElementById(`sec-${name}`);
+  if (!sec) return;
+
+  setActiveNav(name);
+  maybeLoadSectionData(name);
+
+  if (typeof sec.scrollIntoView === "function") {
+    sec.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // Animate the active section when GSAP is available.
+  animateSectionEntrance(name);
+}
+
+function hasGsap() {
+  return typeof window !== "undefined" && !!window.gsap && typeof window.gsap.fromTo === "function";
+}
+
+function animateSectionEntrance(name) {
+  if (!hasGsap()) return;
+  const sec = document.getElementById(`sec-${name}`);
+  if (!sec) return;
+
+  const gsap = window.gsap;
+  const headerEls = sec.querySelectorAll(".sec-header");
+  const blockEls = Array.from(sec.querySelectorAll(".card, .lib-card, .wl-pl-card")).filter(el => !el.classList.contains("hidden"));
+
+  if (headerEls.length) {
+    gsap.fromTo(headerEls, { autoAlpha: 0, y: 10 }, {
+      autoAlpha: 1,
+      y: 0,
+      duration: 0.28,
+      ease: "power2.out",
+      overwrite: "auto",
+    });
+  }
+
+  if (blockEls.length) {
+    gsap.fromTo(blockEls, { autoAlpha: 0, y: 14, scale: 0.99 }, {
+      autoAlpha: 1,
+      y: 0,
+      scale: 1,
+      duration: 0.35,
+      ease: "power2.out",
+      stagger: 0.035,
+      overwrite: "auto",
+    });
+  }
+
+  if (name === "watchlist") {
+    animateWatchlistUI();
+  }
+}
+
+function animateWatchlistUI() {
+  if (!hasGsap()) return;
+  const grid = document.getElementById("watchlistGrid");
+  if (!grid) return;
+
+  const gsap = window.gsap;
+  const cards = grid.querySelectorAll(":scope > .lib-card, :scope > .wl-pl-card");
+  if (cards.length) {
+    gsap.fromTo(cards, { autoAlpha: 0, y: 10 }, {
+      autoAlpha: 1,
+      y: 0,
+      duration: 0.28,
+      ease: "power2.out",
+      stagger: 0.03,
+      overwrite: "auto",
+    });
+  }
+
+  const rows = grid.querySelectorAll(".wl-entries:not(.hidden) .wl-entry-row");
+  if (rows.length) {
+    gsap.fromTo(rows, { autoAlpha: 0, x: -8 }, {
+      autoAlpha: 1,
+      x: 0,
+      duration: 0.22,
+      ease: "power2.out",
+      stagger: 0.015,
+      overwrite: "auto",
+    });
+  }
+
+  const fills = grid.querySelectorAll(".wl-progress-fill[data-target]");
+  fills.forEach(fill => {
+    const target = Math.max(0, Math.min(100, Number(fill.dataset.target || 0)));
+    gsap.fromTo(fill, { width: "0%" }, {
+      width: `${target}%`,
+      duration: 0.45,
+      ease: "power2.out",
+      overwrite: "auto",
+    });
+  });
 }
 
 /* ─── Theme ──────────────────────────────────────────────── */
@@ -62,6 +182,7 @@ function setTheme(name) {
 
   // Re-apply wallpaper for the selected theme so each theme can keep its own default/custom image.
   loadCustomBackground();
+  syncKittyCursorWithTheme();
 }
 
 function loadSavedTheme() {
@@ -69,6 +190,214 @@ function loadSavedTheme() {
     const saved = localStorage.getItem("youme_theme");
     if (saved) setTheme(saved);
   } catch (_) {}
+}
+
+const kittyCursorState = {
+  initialized: false,
+  enabled: false,
+  tickerBound: false,
+  observer: null,
+  gsap: null,
+  cursorEl: null,
+  dotEl: null,
+  particlesEl: null,
+  mouse: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+  pos: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+  lastHeartAt: 0,
+  interactiveEls: [],
+};
+
+function canUseKittyCursor() {
+  if (!hasGsap()) return false;
+  if (!window.matchMedia) return false;
+  if (!window.matchMedia("(pointer:fine)").matches) return false;
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return false;
+  return true;
+}
+
+function isHelloKittyTheme() {
+  return document.documentElement.getAttribute("data-theme") === "hello-kitty";
+}
+
+function kittyCursorTick() {
+  const state = kittyCursorState;
+  if (!state.enabled || !state.gsap) return;
+
+  state.pos.x += (state.mouse.x - state.pos.x) * 0.16;
+  state.pos.y += (state.mouse.y - state.pos.y) * 0.16;
+
+  state.gsap.set(state.cursorEl, { x: state.pos.x, y: state.pos.y });
+  state.gsap.set(state.dotEl, { x: state.mouse.x, y: state.mouse.y });
+}
+
+function createKittyHeart(x, y, burst = false) {
+  const state = kittyCursorState;
+  if (!state.enabled || !state.gsap || !state.particlesEl) return;
+
+  const heart = document.createElement("div");
+  heart.className = "heart";
+  state.particlesEl.appendChild(heart);
+
+  const spread = burst ? 80 : 30;
+  const rise = burst ? 130 : 75;
+  const drift = (Math.random() * spread) - spread / 2;
+  const duration = burst ? 0.95 : 0.72;
+  const rot = 45 + (Math.random() * 48 - 24);
+
+  state.gsap.set(heart, {
+    x,
+    y,
+    scale: burst ? 0.9 : 0.7,
+    rotation: rot,
+    opacity: 0.95,
+  });
+
+  state.gsap.to(heart, {
+    y: y - rise,
+    x: x + drift,
+    opacity: 0,
+    scale: burst ? 1.7 : 1.25,
+    duration,
+    ease: "power2.out",
+    onComplete: () => heart.remove(),
+  });
+}
+
+function setKittyCursorEnabled(enabled) {
+  const state = kittyCursorState;
+  if (!state.initialized || !state.gsap) return;
+  if (state.enabled === enabled) return;
+
+  state.enabled = enabled;
+
+  if (enabled) {
+    document.documentElement.classList.add("kitty-cursor-enabled");
+    state.pos.x = state.mouse.x;
+    state.pos.y = state.mouse.y;
+    state.gsap.set(state.cursorEl, { x: state.pos.x, y: state.pos.y, scale: 1 });
+    state.gsap.set(state.dotEl, { x: state.mouse.x, y: state.mouse.y, scale: 1 });
+    if (!state.tickerBound) {
+      state.gsap.ticker.add(kittyCursorTick);
+      state.tickerBound = true;
+    }
+    return;
+  }
+
+  document.documentElement.classList.remove("kitty-cursor-enabled");
+  if (state.tickerBound) {
+    state.gsap.ticker.remove(kittyCursorTick);
+    state.tickerBound = false;
+  }
+  state.gsap.set(state.cursorEl, { clearProps: "x,y,scale" });
+  state.gsap.set(state.dotEl, { clearProps: "x,y,scale" });
+  state.interactiveEls.forEach((el) => state.gsap.to(el, { x: 0, y: 0, duration: 0.22, overwrite: "auto" }));
+  if (state.particlesEl) state.particlesEl.innerHTML = "";
+}
+
+function syncKittyCursorWithTheme() {
+  setKittyCursorEnabled(isHelloKittyTheme() && canUseKittyCursor());
+}
+
+function bindKittyCursorTargets() {
+  const state = kittyCursorState;
+  const selector = "a, button, .btn, .nav-item, .mob-tab, .theme-opt, input, select, textarea, [role='button']";
+  state.interactiveEls = Array.from(new Set(Array.from(document.querySelectorAll(selector))));
+
+  state.interactiveEls.forEach((el) => {
+    el.addEventListener("mouseenter", () => {
+      if (!state.enabled || !state.gsap) return;
+      state.gsap.to(state.cursorEl, {
+        scale: 1.8,
+        duration: 0.26,
+        ease: "power2.out",
+        overwrite: "auto",
+      });
+    });
+
+    el.addEventListener("mouseleave", () => {
+      if (!state.gsap) return;
+      state.gsap.to(state.cursorEl, {
+        scale: 1,
+        duration: 0.22,
+        ease: "power2.out",
+        overwrite: "auto",
+      });
+      state.gsap.to(el, { x: 0, y: 0, duration: 0.22, ease: "power2.out", overwrite: "auto" });
+    });
+
+    el.addEventListener("mousemove", (e) => {
+      if (!state.enabled || !state.gsap) return;
+      const rect = el.getBoundingClientRect();
+      const x = e.clientX - rect.left - rect.width / 2;
+      const y = e.clientY - rect.top - rect.height / 2;
+      state.gsap.to(el, {
+        x: x * 0.18,
+        y: y * 0.18,
+        duration: 0.24,
+        ease: "power2.out",
+        overwrite: "auto",
+      });
+    });
+  });
+}
+
+function initHelloKittyCursor() {
+  const state = kittyCursorState;
+  if (state.initialized) {
+    syncKittyCursorWithTheme();
+    return;
+  }
+
+  state.cursorEl = document.querySelector(".cursor");
+  state.dotEl = document.querySelector(".cursor-dot");
+  state.particlesEl = document.querySelector(".particles");
+  if (!state.cursorEl || !state.dotEl || !state.particlesEl) return;
+
+  if (!hasGsap()) return;
+  state.gsap = window.gsap;
+
+  window.addEventListener("mousemove", (e) => {
+    state.mouse.x = e.clientX;
+    state.mouse.y = e.clientY;
+
+    if (!state.enabled) return;
+
+    const now = performance.now();
+    const enoughTimePassed = now - state.lastHeartAt > 34;
+    if (enoughTimePassed && Math.random() > 0.7) {
+      state.lastHeartAt = now;
+      createKittyHeart(e.clientX, e.clientY, false);
+    }
+  }, { passive: true });
+
+  window.addEventListener("click", (e) => {
+    if (!state.enabled || !state.gsap) return;
+    for (let i = 0; i < 6; i += 1) createKittyHeart(e.clientX, e.clientY, true);
+
+    state.gsap.fromTo(state.cursorEl,
+      { scale: 1 },
+      {
+        scale: 0.72,
+        yoyo: true,
+        repeat: 1,
+        duration: 0.14,
+        ease: "power2.out",
+      },
+    );
+  }, { passive: true });
+
+  bindKittyCursorTargets();
+
+  if (window.MutationObserver) {
+    state.observer = new MutationObserver(() => syncKittyCursorWithTheme());
+    state.observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+  }
+
+  state.initialized = true;
+  syncKittyCursorWithTheme();
 }
 
 /* ─── Focus Mode State ──────────────────────────────────── */
@@ -198,6 +527,33 @@ function getAudioCandidates(streamingData) {
       return { bitrate, url };
     })
     .filter(f => !!f.url);
+}
+
+// Resolve track: pre-warm server cache + return proxy URL, fallback to browser extractor
+async function resolveTrackStream(trackUrl) {
+  if (focusTrackCache[trackUrl]) {
+    return { streamUrl: focusTrackCache[trackUrl], title: currentTrackMeta.title || "Track" };
+  }
+  try {
+    // Call music_stream_url to pre-warm the server-side stream cache and get title.
+    // The audio src will point to /music_proxy so the browser never hits YouTube CDN directly.
+    const resp = await fetch("/music_stream_url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: trackUrl }),
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (!data.error) {
+        const proxyUrl = `/music_proxy?url=${encodeURIComponent(trackUrl)}`;
+        focusTrackCache[trackUrl] = proxyUrl;
+        return { streamUrl: proxyUrl, title: data.title || currentTrackMeta.title || "Track" };
+      }
+    }
+  } catch (_) {
+    // server unavailable, fall through to browser extractor
+  }
+  return resolveTrackStreamInBrowser(trackUrl);
 }
 
 async function resolveTrackStreamInBrowser(trackUrl) {
@@ -1034,7 +1390,7 @@ async function playFocusTrack(trackUrl) {
   };
   setTrackTitleLabel(currentTrackMeta.title);
 
-  const resolved = await resolveTrackStreamInBrowser(trackUrl);
+  const resolved = await resolveTrackStream(trackUrl);
   if (!els.trackAudio.src || els.trackAudio.src !== resolved.streamUrl) {
     els.trackAudio.src = resolved.streamUrl;
   }
@@ -1043,6 +1399,7 @@ async function playFocusTrack(trackUrl) {
   }
 
   els.trackAudio.volume = Number(els.volume?.value || 35) / 100;
+  els.trackAudio.load();
   await els.trackAudio.play();
   focusState.audioEnabled = true;
   focusState.audioSource = "track";
@@ -1379,11 +1736,105 @@ function initApp() {
   loadPlanner();
   initCustomBackground();
   loadCustomBackground();
-  // Library loads on demand when user navigates to it
+  initSectionScrollTracking();
+  setActiveNav("focus");
+  maybeLoadSectionData("focus");
+  initHelloKittyCursor();
+  animateSectionEntrance("focus");
+}
+
+function formatMemberSince(iso) {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function initialsFromName(name, email) {
+  const text = (name || "").trim() || (email || "").trim();
+  if (!text) return "YM";
+  const parts = text.split(/[\s@._-]+/).filter(Boolean);
+  if (!parts.length) return "YM";
+  return (parts[0][0] + (parts[1]?.[0] || "")).toUpperCase();
+}
+
+function renderAdminBadges(badges) {
+  const grid = document.getElementById("adminBadgeGrid");
+  if (!grid) return;
+  if (!Array.isArray(badges) || !badges.length) {
+    grid.innerHTML = '<div class="admin-badge">No badges yet.</div>';
+    return;
+  }
+
+  grid.innerHTML = badges.map(b => `
+    <div class="admin-badge ${b.status === "coming-soon" ? "locked" : ""}">
+      <div class="admin-badge-top">
+        <span class="admin-badge-title">${escHtml(b.title || "Badge")}</span>
+        <span class="admin-badge-state">${b.status === "coming-soon" ? "Coming Soon" : "Unlocked"}</span>
+      </div>
+      <p class="admin-badge-desc">${escHtml(b.description || "")}</p>
+    </div>
+  `).join("");
+}
+
+async function loadAdminPanel() {
+  try {
+    const res = await fetch("/admin_profile");
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || "Failed to load admin profile");
+
+    const profile = data.profile || {};
+    const stats = data.stats || {};
+
+    const name = profile.name || "User";
+    const email = profile.email || "-";
+    const avatar = document.getElementById("adminAvatar");
+    const nameEl = document.getElementById("adminName");
+    const emailEl = document.getElementById("adminEmail");
+    const tierEl = document.getElementById("adminTier");
+    const memberEl = document.getElementById("adminMemberSince");
+    const idEl = document.getElementById("adminUserId");
+
+    if (avatar) avatar.textContent = initialsFromName(name, email);
+    if (nameEl) nameEl.textContent = name;
+    if (emailEl) emailEl.textContent = email;
+    if (tierEl) tierEl.textContent = profile.tier || "Free";
+    if (memberEl) memberEl.textContent = formatMemberSince(profile.member_since);
+    if (idEl) idEl.textContent = profile.id != null ? String(profile.id) : "-";
+
+    const downloadsEl = document.getElementById("adminDownloads");
+    const habitsEl = document.getElementById("adminHabits");
+    const currentStreakEl = document.getElementById("adminCurrentStreak");
+    const bestStreakEl = document.getElementById("adminBestStreak");
+    if (downloadsEl) downloadsEl.textContent = String(stats.downloads || 0);
+    if (habitsEl) habitsEl.textContent = String(stats.habits_total || 0);
+    if (currentStreakEl) currentStreakEl.textContent = String(stats.current_streak || 0);
+    if (bestStreakEl) bestStreakEl.textContent = String(stats.best_streak || 0);
+
+    renderAdminBadges(data.badges || []);
+  } catch (e) {
+    const grid = document.getElementById("adminBadgeGrid");
+    if (grid) {
+      grid.innerHTML = '<div class="admin-badge">Could not load admin data.</div>';
+    }
+    showToast(`Admin panel load failed: ${e.message || "unknown"}`, "error");
+  }
 }
 
 /* ─── Watchlist Logic ──────────────────────────────────── */
 let watchlistItems = [];
+const wlExpandState = {};  // in-memory expand/collapse per item id
+
+function wlFmt(secs) {
+  const s = Number(secs) || 0;
+  if (!s) return null;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sc = s % 60;
+  if (h > 0) return `${h}h${m > 0 ? " " + m + "m" : ""}`;
+  if (m > 0) return `${m}m${sc > 0 ? " " + sc + "s" : ""}`;
+  return `${sc}s`;
+}
 
 function loadWatchlist() {
   try {
@@ -1403,55 +1854,81 @@ function saveWatchlist() {
 async function addWatchlistItem() {
   const input = document.getElementById("watchlistInput");
   const url = input.value.trim();
-  if (!url) {
-    showToast("Please enter a YouTube URL", "error");
-    return;
-  }
-  
+  if (!url) { showToast("Please enter a YouTube URL", "error"); return; }
+
   const tempId = Date.now().toString();
-  // Optimistic UI
-  watchlistItems.push({
-    id: tempId,
-    url: url,
-    title: "Loading...",
-    thumb: "",
-    done: false,
-    category: "Productive",
-    learned: ""
-  });
+  watchlistItems.push({ id: tempId, url, type: "video", title: "Loading…", thumb: "", done: false, category: "Productive", learned: "" });
   input.value = "";
   renderWatchlist();
-  
+
   try {
     const res = await fetch("/video_info", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url })
+      body: JSON.stringify({ url }),
     });
     const data = await res.json();
     if (data.error) throw new Error(data.error);
-    
-    // Update the item
+
     const idx = watchlistItems.findIndex(i => i.id === tempId);
-    if (idx !== -1) {
-      watchlistItems[idx].title = data.title;
-      watchlistItems[idx].thumb = data.thumbnail;
-      saveWatchlist();
-      showToast("Added to Watchlist", "success");
+    if (idx === -1) return;
+
+    if (data.type === "playlist") {
+      watchlistItems[idx] = {
+        id: tempId, url, type: "playlist",
+        title: data.title,
+        thumb: data.thumb || "",
+        totalDuration: data.total_duration || 0,
+        count: data.count || 0,
+        entries: (data.entries || []).map(e => ({ ...e, done: false })),
+        category: "Productive",
+        learned: "",
+      };
+    } else {
+      watchlistItems[idx] = {
+        id: tempId, url, type: "video",
+        title: data.title,
+        thumb: data.thumb || data.thumbnail || "",
+        duration: data.duration || 0,
+        done: false,
+        category: "Productive",
+        learned: "",
+      };
     }
+    saveWatchlist();
+    showToast(`Added: ${watchlistItems[idx].title}`, "success");
   } catch (err) {
     watchlistItems = watchlistItems.filter(i => i.id !== tempId);
     renderWatchlist();
-    showToast("Failed to fetch video info: " + err.message, "error");
+    showToast("Failed: " + err.message, "error");
   }
 }
 
 function toggleWatchlistDone(id) {
   const item = watchlistItems.find(i => i.id === id);
-  if (item) {
-    item.done = !item.done;
-    saveWatchlist();
-  }
+  if (item) { item.done = !item.done; saveWatchlist(); }
+}
+
+function togglePlaylistEntry(playlistId, entryIdx) {
+  const pl = watchlistItems.find(i => i.id === playlistId);
+  if (!pl || !pl.entries) return;
+  const e = pl.entries[Number(entryIdx)];
+  if (e) { e.done = !e.done; saveWatchlist(); }
+}
+
+function deleteWatchlistItem(id) {
+  watchlistItems = watchlistItems.filter(i => i.id !== id);
+  delete wlExpandState[id];
+  saveWatchlist();
+}
+
+function deletePlaylistEntry(playlistId, entryIdx) {
+  const pl = watchlistItems.find(i => i.id === playlistId);
+  if (!pl || !pl.entries) return;
+  pl.entries.splice(Number(entryIdx), 1);
+  pl.count = pl.entries.length;
+  pl.totalDuration = pl.entries.reduce((s, e) => s + (Number(e.duration) || 0), 0);
+  saveWatchlist();
 }
 
 function updateWatchlistCategory(id, val) {
@@ -1464,51 +1941,114 @@ function updateWatchlistLearned(id, val) {
   if (item) { item.learned = val; saveWatchlist(); }
 }
 
-function deleteWatchlistItem(id) {
-  watchlistItems = watchlistItems.filter(i => i.id !== id);
-  saveWatchlist();
+function toggleWatchlistExpand(id) {
+  wlExpandState[id] = !wlExpandState[id];
+  renderWatchlist();
 }
 
 function renderWatchlist() {
   const grid = document.getElementById("watchlistGrid");
   if (!grid) return;
-  
-  if (watchlistItems.length === 0) {
+  if (!watchlistItems.length) {
     grid.innerHTML = '<p class="empty-msg">No watchlist items yet.</p>';
     return;
   }
-  
   grid.innerHTML = "";
   watchlistItems.forEach(item => {
-    const div = document.createElement("div");
-    div.className = "lib-card";
-    
-    const thumbHtml = item.thumb 
-      ? `<img src="${item.thumb}" class="lib-thumb" alt="Thumbnail">`
-      : `<div class="lib-thumb" style="display:flex;align-items:center;justify-content:center;background:#333;color:#888;">⏳</div>`;
-      
-    div.innerHTML = `
-      ${thumbHtml}
-      <div class="lib-info" style="display:flex; flex-direction:column; gap:8px;">
-        <h4 class="lib-title" style="${item.done ? 'text-decoration:line-through;opacity:0.6;' : ''}">${item.title}</h4>
-        
-        <div style="display:flex; gap:10px; align-items:center;">
-          <input type="checkbox" ${item.done ? 'checked' : ''} onchange="toggleWatchlistDone('${item.id}')" style="cursor:pointer; transform:scale(1.2);">
-          <select class="dash-select compact" onchange="updateWatchlistCategory('${item.id}', this.value)" style="flex:1;">
-            <option value="Productive" ${item.category === 'Productive' ? 'selected' : ''}>Productive</option>
-            <option value="Good Habit" ${item.category === 'Good Habit' ? 'selected' : ''}>Good Habit</option>
-            <option value="Bad Habit" ${item.category === 'Bad Habit' ? 'selected' : ''}>Bad Habit</option>
-            <option value="Time Pass" ${item.category === 'Time Pass' ? 'selected' : ''}>Time Pass</option>
-            <option value="Entertainment" ${item.category === 'Entertainment' ? 'selected' : ''}>Entertainment</option>
-          </select>
-        </div>
-        
-        <input type="text" class="dash-input compact" placeholder="What was learned?" value="${item.learned}" onchange="updateWatchlistLearned('${item.id}', this.value)" style="margin-top:4px;">
-      </div>
-      <button class="lib-del" onclick="deleteWatchlistItem('${item.id}')" title="Delete">🗑</button>
-    `;
-    grid.appendChild(div);
+    grid.appendChild(item.type === "playlist" ? renderWlPlaylistCard(item) : renderWlVideoCard(item));
   });
+  animateWatchlistUI();
+}
+
+function renderWlVideoCard(item) {
+  const div = document.createElement("div");
+  div.className = "lib-card wl-video-card";
+  const thumbHtml = item.thumb
+    ? `<img src="${escHtml(item.thumb)}" class="lib-thumb" alt="" loading="lazy">`
+    : `<div class="lib-thumb" style="display:flex;align-items:center;justify-content:center;background:#2a2a2a;color:#888;font-size:2rem;">🎬</div>`;
+  const durHtml = item.duration ? `<span class="wl-dur">⏱ ${wlFmt(item.duration)}</span>` : "";
+  const cats = ["Productive","Good Habit","Bad Habit","Time Pass","Entertainment"];
+  div.innerHTML = `
+    ${thumbHtml}
+    <div class="lib-info" style="display:flex;flex-direction:column;gap:8px;">
+      <h4 class="wl-vtitle${item.done ? " wl-done-title" : ""}">${escHtml(item.title)}</h4>
+      ${durHtml}
+      <div style="display:flex;gap:10px;align-items:center;">
+        <input type="checkbox" ${item.done ? "checked" : ""} onchange="toggleWatchlistDone('${item.id}')" style="cursor:pointer;transform:scale(1.2);">
+        <select class="dash-select compact" onchange="updateWatchlistCategory('${item.id}', this.value)" style="flex:1;">
+          ${cats.map(c => `<option value="${c}"${item.category === c ? " selected" : ""}>${c}</option>`).join("")}
+        </select>
+      </div>
+      <input type="text" class="dash-input compact" placeholder="What was learned?" value="${escHtml(item.learned || "")}" onchange="updateWatchlistLearned('${item.id}', this.value)" style="margin-top:2px;">
+    </div>
+    <button class="lib-del-btn" onclick="deleteWatchlistItem('${item.id}')" title="Delete">🗑</button>
+  `;
+  return div;
+}
+
+function renderWlPlaylistCard(item) {
+  const div = document.createElement("div");
+  div.className = "wl-pl-card";
+  const entries = item.entries || [];
+  const total = entries.length;
+  const done = entries.filter(e => e.done).length;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const durStr = item.totalDuration ? `⏱ ${wlFmt(item.totalDuration)} total` : "";
+  const expanded = !!wlExpandState[item.id];
+  const cats = ["Productive","Good Habit","Bad Habit","Time Pass","Entertainment"];
+
+  const thumbHtml = item.thumb
+    ? `<button class="wl-pl-thumb-btn" onclick="toggleWatchlistExpand('${item.id}')" title="${expanded ? "Hide" : "Show"} playlist videos"><img src="${escHtml(item.thumb)}" class="wl-pl-thumb" alt="" loading="lazy"></button>`
+    : `<button class="wl-pl-thumb-btn" onclick="toggleWatchlistExpand('${item.id}')" title="${expanded ? "Hide" : "Show"} playlist videos"><div class="wl-pl-thumb wl-pl-thumb-empty">📋</div></button>`;
+
+  const entriesHtml = entries.map((e, i) => {
+    const eDur = e.duration ? `<span class="wl-e-dur">${wlFmt(e.duration)}</span>` : "";
+    const eThumb = e.thumb
+      ? `<img src="${escHtml(e.thumb)}" class="wl-e-thumb" alt="" loading="lazy">`
+      : `<span class="wl-e-thumb wl-e-thumb-empty">🎬</span>`;
+    return `<div class="wl-entry-row${e.done ? " wl-entry-done" : ""}">
+      ${eThumb}
+      <input type="checkbox" class="wl-e-chk" ${e.done ? "checked" : ""} onchange="togglePlaylistEntry('${item.id}',${i})">
+      <span class="wl-e-num">${i + 1}.</span>
+      <span class="wl-e-title">${escHtml(e.title)}</span>
+      ${eDur}
+      <button class="wl-e-del" onclick="deletePlaylistEntry('${item.id}',${i})" title="Remove">✕</button>
+    </div>`;
+  }).join("");
+
+  div.innerHTML = `
+    <div class="wl-pl-header">
+      ${thumbHtml}
+      <div class="wl-pl-info">
+        <div class="wl-pl-title">${escHtml(item.title)}</div>
+        <div class="wl-pl-meta">
+          <span class="wl-pl-badge">PLAYLIST</span>
+          <span>${total} video${total !== 1 ? "s" : ""}</span>
+          ${durStr ? `<span class="wl-pl-dur">${escHtml(durStr)}</span>` : ""}
+        </div>
+      </div>
+      <button class="lib-del-btn" onclick="deleteWatchlistItem('${item.id}')" title="Delete playlist">🗑</button>
+    </div>
+    <div class="wl-progress-wrap">
+      <div class="wl-progress-track">
+        <div class="wl-progress-fill" data-target="${pct}" style="width:${pct}%"></div>
+      </div>
+      <span class="wl-pct-label"><strong>${pct}%</strong> complete &nbsp;·&nbsp; ${done}/${total} watched</span>
+    </div>
+    <div class="wl-pl-controls">
+      <select class="dash-select compact" onchange="updateWatchlistCategory('${item.id}', this.value)">
+        ${cats.map(c => `<option value="${c}"${item.category === c ? " selected" : ""}>${c}</option>`).join("")}
+      </select>
+      <input type="text" class="dash-input compact wl-learned-input" placeholder="What was learned?" value="${escHtml(item.learned || "")}" onchange="updateWatchlistLearned('${item.id}', this.value)">
+    </div>
+    <button class="wl-expand-btn" onclick="toggleWatchlistExpand('${item.id}')">
+      ${expanded ? "Hide lectures" : `Show ${total} lecture${total !== 1 ? "s" : ""}`}
+    </button>
+    <div class="wl-entries"${expanded ? "" : " hidden"}>
+      ${entriesHtml || '<p class="wl-empty-pl">No videos in this playlist.</p>'}
+    </div>
+  `;
+  return div;
 }
 
 /* ─── Planner Logic ────────────────────────────────────── */
