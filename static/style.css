@@ -214,7 +214,7 @@ body {
 /* ─── Background Layer ───────────────────────────── */
 .bg-layer {
   position: fixed;
-  inset: 0;
+  inset: -15vh 0;
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
@@ -225,7 +225,7 @@ body {
 }
 
 [data-theme="batman"] .bg-layer { background-image: url('themes/batman-new.jpg'); background-size: cover; background-position: center; }
-[data-theme="hello-kitty"] .bg-layer { background-image: url('themes/hello-kitty-new.png'); background-size: cover; }
+[data-theme="hello-kitty"] .bg-layer { background-image: url('themes/hello-kitty-wallpaper.jpg'); background-size: cover; }
 [data-theme="spiderman"] .bg-layer { background-image: url('themes/spiderman-new-new.jpg'); background-size: cover; background-position: center 15%; background-repeat: no-repeat; }
 [data-theme="spiderman"] .bg-layer::before {
   content: '';

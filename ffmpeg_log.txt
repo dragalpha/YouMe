@@ -1,0 +1,42 @@
+ffmpeg version 2026-03-12-git-9dc44b43b2-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers
+  built with gcc 15.2.0 (Rev11, Built by MSYS2 project)
+  configuration: --enable-gpl --enable-version3 --enable-static --disable-w32threads --disable-autodetect --enable-cairo --enable-fontconfig --enable-iconv --enable-gnutls --enable-lcms2 --enable-libxml2 --enable-gmp --enable-bzlib --enable-lzma --enable-libsnappy --enable-zlib --enable-librist --enable-libsrt --enable-libssh --enable-libzmq --enable-avisynth --enable-libbluray --enable-libcaca --enable-libdvdnav --enable-libdvdread --enable-sdl2 --enable-libaribb24 --enable-libaribcaption --enable-libdav1d --enable-libdavs2 --enable-libopenjpeg --enable-libquirc --enable-libuavs3d --enable-libxevd --enable-libzvbi --enable-liboapv --enable-libqrencode --enable-librav1e --enable-libsvtav1 --enable-libvvenc --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxavs2 --enable-libxeve --enable-libxvid --enable-libaom --enable-libjxl --enable-libsvtjpegxs --enable-libvpx --enable-mediafoundation --enable-libass --enable-frei0r --enable-libfreetype --enable-libfribidi --enable-libharfbuzz --enable-liblensfun --enable-libvidstab --enable-libvmaf --enable-libzimg --enable-amf --enable-cuda-llvm --enable-cuvid --enable-dxva2 --enable-d3d11va --enable-d3d12va --enable-ffnvcodec --enable-libvpl --enable-nvdec --enable-nvenc --enable-vaapi --enable-libshaderc --enable-vulkan --enable-libplacebo --enable-opencl --enable-libcdio --enable-openal --enable-libgme --enable-libmodplug --enable-libopenmpt --enable-libopencore-amrwb --enable-libmp3lame --enable-libshine --enable-libtheora --enable-libtwolame --enable-libvo-amrwbenc --enable-libcodec2 --enable-libilbc --enable-libgsm --enable-liblc3 --enable-libopencore-amrnb --enable-libopus --enable-libspeex --enable-libvorbis --enable-ladspa --enable-libbs2b --enable-libflite --enable-libmysofa --enable-librubberband --enable-libsoxr --enable-chromaprint --enable-whisper
+  libavutil      60. 27.100 / 60. 27.100
+  libavcodec     62. 29.100 / 62. 29.100
+  libavformat    62. 13.100 / 62. 13.100
+  libavdevice    62.  4.100 / 62.  4.100
+  libavfilter    11. 15.101 / 11. 15.101
+  libswscale      9.  6.100 /  9.  6.100
+  libswresample   6.  4.100 /  6.  4.100
+Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'c:\Users\SANTAM\Desktop\Youme\mitjul-vtuber.3840x2160.mp4':
+  Metadata:
+    major_brand     : mp42
+    minor_version   : 0
+    compatible_brands: mp42mp41
+    creation_time   : 2026-03-11T08:48:47.000000Z
+  Duration: 00:00:05.70, start: 0.000000, bitrate: 20176 kb/s
+  Stream #0:0[0x1](eng): Video: h264 (Main) (avc1 / 0x31637661), yuv420p(tv, bt709, progressive), 3840x2160, 20173 kb/s, 30 fps, 30 tbr, 30k tbn (default)
+    Metadata:
+      creation_time   : 2026-03-11T08:48:47.000000Z
+      handler_name    : ?Mainconcept Video Media Handler
+      encoder         : AVC Coding
+Stream mapping:
+  Stream #0:0 -> #0:0 (h264 (native) -> mjpeg (native))
+Press [q] to stop, [?] for help
+Output #0, image2, to 'c:\Users\SANTAM\Desktop\Youme\static\themes\hello-kitty-wallpaper.jpg':
+  Metadata:
+    major_brand     : mp42
+    minor_version   : 0
+    compatible_brands: mp42mp41
+    encoder         : Lavf62.13.100
+  Stream #0:0(eng): Video: mjpeg, yuv420p(pc, bt709, progressive), 3840x2160, q=2-31, 200 kb/s, 30 fps, 30 tbn (default)
+    Metadata:
+      encoder         : Lavc62.29.100 mjpeg
+      creation_time   : 2026-03-11T08:48:47.000000Z
+      handler_name    : ?Mainconcept Video Media Handler
+    Side data:
+      CPB properties: bitrate max/min/avg: 0/0/200000 buffer size: 0 vbv_delay: N/A
+[image2 @ 00000269564d3380] The specified filename 'c:\Users\SANTAM\Desktop\Youme\static\themes\hello-kitty-wallpaper.jpg' does not contain an image sequence pattern or a pattern is invalid.
+[image2 @ 00000269564d3380] Use a pattern such as %03d for an image sequence or use the -update option (with -frames:v 1 if needed) to write a single image.
+[out#0/image2 @ 00000269564cb840] video:272KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+frame=    1 fps=0.0 q=11.1 Lsize=N/A time=00:00:00.03 bitrate=N/A speed=0.0718x elapsed=0:00:00.46    
