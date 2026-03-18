@@ -433,9 +433,10 @@ function scrollSectionAnchorIntoView(anchor) {
     const isTopbarVisible = topbar && window.getComputedStyle(topbar).display !== "none";
     const topbarHeight = isTopbarVisible ? topbar.getBoundingClientRect().height : 0;
     
-    // Calculate desired gap - ensure at least 120px of space on mobile
+    // On mobile: topbar + 50px gap is minimum
+    // On desktop: small gap is fine
     const isMobile = window.innerWidth <= 768;
-    const gap = isMobile ? Math.max(120, topbarHeight + 60) : 20;
+    const gap = isMobile ? Math.max(50, topbarHeight + 20) : 10;
     const desiredOffset = topbarHeight + gap;
 
     // Get the element's absolute position on the page
@@ -480,8 +481,8 @@ function showSection(name) {
   setActiveNav(name);
   maybeLoadSectionData(name);
 
-  // Target the h1.sec-title for better visibility, fallback to .sec-header then sec
-  const anchor = sec.querySelector(".sec-title") || sec.querySelector(".sec-header") || sec;
+  // Target the `.sec-header` container (not the h1 inside it)
+  const anchor = sec.querySelector(".sec-header") || sec;
   scrollSectionAnchorIntoView(anchor);
 
   // Animate the active section when GSAP is available.
