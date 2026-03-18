@@ -428,8 +428,27 @@ function getSectionScrollOffset() {
   const topbar = document.querySelector(".mobile-topbar");
   const topbarVisible = !!topbar && window.getComputedStyle(topbar).display !== "none";
   const topbarHeight = topbarVisible ? topbar.getBoundingClientRect().height : 0;
-  const extraGap = topbarVisible ? 56 : 20;
+  const extraGap = topbarVisible ? 72 : 20;
   return Math.ceil(topbarHeight + extraGap);
+}
+
+function scrollSectionAnchorIntoView(anchor) {
+  if (!anchor) return;
+
+  const offset = getSectionScrollOffset();
+  const targetY = window.pageYOffset + anchor.getBoundingClientRect().top - offset;
+  window.scrollTo({ top: Math.max(0, targetY), behavior: "smooth" });
+
+  // Re-check after smooth scrolling in case layout shifts (fonts, cards, transforms).
+  const correctPosition = () => {
+    const delta = anchor.getBoundingClientRect().top - offset;
+    if (Math.abs(delta) > 2) {
+      window.scrollTo({ top: Math.max(0, window.pageYOffset + delta), behavior: "auto" });
+    }
+  };
+
+  window.setTimeout(correctPosition, 420);
+  window.setTimeout(correctPosition, 820);
 }
 
 /* ─── Navigation ────────────────────────────────────────── */
@@ -441,8 +460,7 @@ function showSection(name) {
   maybeLoadSectionData(name);
 
   const anchor = sec.querySelector(".sec-header") || sec;
-  const targetY = window.pageYOffset + anchor.getBoundingClientRect().top - getSectionScrollOffset();
-  window.scrollTo({ top: Math.max(0, targetY), behavior: "smooth" });
+  scrollSectionAnchorIntoView(anchor);
 
   // Animate the active section when GSAP is available.
   animateSectionEntrance(name);
