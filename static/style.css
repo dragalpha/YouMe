@@ -685,8 +685,8 @@ body {
 [data-theme="hello-kitty"] .sidebar,
 [data-theme="hello-kitty"] .mobile-topbar {
   background:
-    linear-gradient(115deg, rgba(255,255,255,0.36), rgba(255,255,255,0.12) 42%, rgba(255,105,180,0.14)),
-    rgba(255,236,246,0.78);
+    linear-gradient(115deg, rgba(255,255,255,0.28), rgba(255,255,255,0.08) 42%, rgba(255,105,180,0.10)),
+    rgba(255,236,246,0.54);
   border-color: rgba(255,255,255,0.46);
   box-shadow: 0 10px 24px rgba(156, 52, 104, 0.16), inset 0 1px 0 rgba(255,255,255,0.34);
   backdrop-filter: blur(18px) saturate(136%);
@@ -694,8 +694,8 @@ body {
 }
 [data-theme="hello-kitty"] .card {
   background:
-    linear-gradient(160deg, rgba(255,255,255,0.40), rgba(255,255,255,0.12) 45%, rgba(255,105,180,0.10)),
-    rgba(255,236,246,0.60);
+    linear-gradient(160deg, rgba(255,255,255,0.30), rgba(255,255,255,0.08) 45%, rgba(255,105,180,0.08)),
+    rgba(255,236,246,0.44);
   border: 1px solid rgba(255,255,255,0.46);
   box-shadow: 0 12px 26px rgba(156, 52, 104, 0.15), inset 0 1px 0 rgba(255,255,255,0.36);
   backdrop-filter: blur(16px) saturate(128%);
@@ -2080,7 +2080,7 @@ body {
 }
 
 @media (max-width: 768px) {
-  :root { --section-scroll-offset: 84px; }
+  :root { --section-scroll-offset: calc(112px + env(safe-area-inset-top, 0px)); }
   .sidebar { display: none; }
   .mobile-topbar { display: flex; }
   .main-content { padding: 70px 14px 34px; }
