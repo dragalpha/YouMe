@@ -582,6 +582,7 @@ body {
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 28px;
+  scroll-margin-top: 20px;
 }
 .sec-title {
   font-family: var(--font-disp);
@@ -2083,6 +2084,7 @@ body {
   :root { --section-scroll-offset: calc(112px + env(safe-area-inset-top, 0px)); }
   .sidebar { display: none; }
   .mobile-topbar { display: flex; }
+  .sec-header { scroll-margin-top: calc(150px + env(safe-area-inset-top, 0px)); }
   .main-content { padding: calc(124px + env(safe-area-inset-top, 0px)) 14px 34px; }
   .app-section { min-height: 72vh; }
   .app-section + .app-section { margin-top: clamp(34px, 8vw, 50px); }

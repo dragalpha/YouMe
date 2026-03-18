@@ -428,7 +428,7 @@ function getSectionScrollOffset() {
   const topbar = document.querySelector(".mobile-topbar");
   const topbarVisible = !!topbar && window.getComputedStyle(topbar).display !== "none";
   const topbarHeight = topbarVisible ? topbar.getBoundingClientRect().height : 0;
-  const extraGap = topbarVisible ? 72 : 20;
+  const extraGap = topbarVisible ? 90 : 20;
   return Math.ceil(topbarHeight + extraGap);
 }
 
