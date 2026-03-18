@@ -68,31 +68,11 @@ function initSectionScrollTracking() {
   sectionElements.forEach(sec => observer.observe(sec));
 }
 
-function getSectionScrollOffset() {
-  const topbar = document.querySelector(".mobile-topbar");
-  const topbarVisible = !!topbar && window.getComputedStyle(topbar).display !== "none";
-  const topbarHeight = topbarVisible ? topbar.getBoundingClientRect().height : 0;
-  const extraGap = topbarVisible ? 90 : 20;
-  return Math.ceil(topbarHeight + extraGap);
-}
-
 function scrollSectionAnchorIntoView(anchor) {
   if (!anchor) return;
-
-  const offset = getSectionScrollOffset();
-  const targetY = window.pageYOffset + anchor.getBoundingClientRect().top - offset;
-  window.scrollTo({ top: Math.max(0, targetY), behavior: "smooth" });
-
-  // Re-check after smooth scrolling in case layout shifts (fonts, cards, transforms).
-  const correctPosition = () => {
-    const delta = anchor.getBoundingClientRect().top - offset;
-    if (Math.abs(delta) > 2) {
-      window.scrollTo({ top: Math.max(0, window.pageYOffset + delta), behavior: "auto" });
-    }
-  };
-
-  window.setTimeout(correctPosition, 420);
-  window.setTimeout(correctPosition, 820);
+  // Use native scrollIntoView which respects CSS scroll-margin-top.
+  // The .sec-header has scroll-margin-top set for mobile/desktop in CSS.
+  anchor.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 /* ─── Navigation ────────────────────────────────────────── */
